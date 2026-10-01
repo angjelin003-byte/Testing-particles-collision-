@@ -34,18 +34,17 @@ android {
     create("debugConfig") {
       val ksFile = file("${rootDir}/debug.keystore")
       val b64File = file("${rootDir}/debug.keystore.base64")
-      if (!ksFile.exists() && b64File.exists()) {
+      if ((!ksFile.exists() || ksFile.length() == 0L) && b64File.exists()) {
         try {
-          val bytes = Base64.getDecoder().decode(b64File.readText().trim())
+          val cleanBase64 = b64File.readText().replace("\\s".toRegex(), "")
+          val bytes = Base64.getDecoder().decode(cleanBase64)
           ksFile.writeBytes(bytes)
         } catch (_: Exception) {}
       }
-      if (ksFile.exists()) {
-        storeFile = ksFile
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
-      }
+      storeFile = ksFile
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
     }
   }
 
