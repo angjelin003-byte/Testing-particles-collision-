@@ -1,6 +1,7 @@
 package com.example.physics
 
 import androidx.compose.ui.graphics.Color
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 data class Particle3D(
@@ -46,46 +47,55 @@ data class Particle3D(
     fun transverseMomentum(): Float = momentum.transverseMagnitude()
 
     /**
-     * Step the particle forward in time under relativistic magnetic field B_z (Tesla)
+     * Step particle forward in time
      */
     fun step(
         dtSeconds: Float,
         magneticFieldTesla: Float,
         electricFieldMVm: Float,
-        maxRadiusMeters: Float = 15f
+        maxRadiusMeters: Float = 14f
     ) {
         if (isDecayed || isEscaped) return
 
-        // Speed of light scaling constant in detector meter units
-        val c = 3.0e8f
+        if (generation == 0) {
+            // Incoming beam particles travel rapidly towards z = 0
+            val pzSign = if (momentum.z >= 0f) 1f else -1f
+            val moveStep = pzSign * dtSeconds * 80.0f
+            position = Vector3D(position.x, position.y, position.z + moveStep)
 
-        // Calculate relativistic Lorentz force F = q * (E + v x B)
-        val v = velocityFractionOfC() // fraction of c
+            // Limit history
+            if (trajectoryHistory.size > 12) trajectoryHistory.removeAt(0)
+            trajectoryHistory.add(position)
+
+            // Check if reached collision vertex
+            if ((pzSign > 0 && position.z >= 0f) || (pzSign < 0 && position.z <= 0f)) {
+                position = Vector3D(position.x, position.y, 0f)
+            }
+            return
+        }
+
+        // Relativistic Lorentz force F = q * (E + v x B)
+        val v = velocityFractionOfC()
         val q = charge.toFloat()
 
-        // Magnetic field along Z-axis (Bz)
-        // Lorentz force perpendicular component: F_x = q * v_y * B, F_y = -q * v_x * B
-        val magneticForceX = q * v.y * magneticFieldTesla * 0.15f
-        val magneticForceY = -q * v.x * magneticFieldTesla * 0.15f
+        val magneticForceX = q * v.y * magneticFieldTesla * 0.12f
+        val magneticForceY = -q * v.x * magneticFieldTesla * 0.12f
         val electricForceZ = q * electricFieldMVm * 0.001f
 
         val deltaMomentum = Vector3D(magneticForceX, magneticForceY, electricForceZ) * dtSeconds
-
-        // Update momentum vector
         momentum += deltaMomentum
 
-        // Update position: dx = v * c * dt
-        val deltaPosition = velocityFractionOfC() * dtSeconds * 12.0f
+        val deltaPosition = velocityFractionOfC() * dtSeconds * 10.0f
         position += deltaPosition
 
-        // Record history for trajectory rendering
-        if (trajectoryHistory.size > 100) {
+        // Cap history to 16 points max to eliminate GC memory overhead
+        if (trajectoryHistory.size > 16) {
             trajectoryHistory.removeAt(0)
         }
         trajectoryHistory.add(position)
 
         // Escaped detector radius boundary check
-        if (position.magnitude() > maxRadiusMeters || kotlin.math.abs(position.z) > maxRadiusMeters * 1.5f) {
+        if (position.magnitude() > maxRadiusMeters || abs(position.z) > maxRadiusMeters * 1.5f) {
             isEscaped = true
         }
     }

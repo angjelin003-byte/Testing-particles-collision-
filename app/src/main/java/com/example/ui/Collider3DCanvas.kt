@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,7 +52,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.physics.Point2D
 import com.example.physics.Vector3D
 import com.example.rendering.Camera3D
 import com.example.rendering.DetectorWireframe
@@ -67,6 +68,11 @@ fun Collider3DCanvas(
 
     val isDark = simState.isDarkTheme
     val bgColor = if (isDark) Color(0xFF080D1A) else Color(0xFFF0F4F8)
+
+    // Reusable projection buffers and path object (Zero heap allocation during 60FPS draw)
+    val projBuffer1 = remember { FloatArray(3) }
+    val projBuffer2 = remember { FloatArray(3) }
+    val reusablePath = remember { Path() }
 
     // Detector Wireframe geometry cache
     val wireframeLines = remember(
@@ -103,57 +109,65 @@ fun Collider3DCanvas(
                         camera.zoomBy(zoom)
                     }
                     if (pan != Offset.Zero) {
-                        // 1-finger drag rotates camera
                         camera.rotateBy(pan.x * 0.005f, pan.y * 0.005f)
                     }
                     cameraChangeCounter++
                 }
             }
     ) {
-        // 3D Canvas Renderer
+        // High-Performance Zero-Allocation 3D Canvas Renderer
         Canvas(modifier = Modifier.fillMaxSize().testTag("3d_collider_canvas")) {
             val width = size.width
             val height = size.height
 
-            // Trigger recomposition on gesture updates
             @Suppress("UNUSED_VARIABLE")
             val trigger = cameraChangeCounter
 
             val matrix = camera.buildTransformMatrix(width, height)
 
-            // 1. Draw 3D Wireframe Detector Lines
+            // 1. Draw 3D Detector Wireframe Lines
             if (simState.wireframeEnabled) {
                 for (line in wireframeLines) {
-                    val p1: Point2D? = matrix.projectToScreen(line.start, width, height)
-                    val p2: Point2D? = matrix.projectToScreen(line.end, width, height)
+                    val ok1 = matrix.projectToScreenFast(line.start.x, line.start.y, line.start.z, width, height, projBuffer1)
+                    val ok2 = matrix.projectToScreenFast(line.end.x, line.end.y, line.end.z, width, height, projBuffer2)
 
-                    if (p1 != null && p2 != null) {
+                    if (ok1 && ok2) {
                         drawLine(
                             color = line.color.copy(alpha = line.alpha),
-                            start = Offset(p1.x, p1.y),
-                            end = Offset(p2.x, p2.y),
-                            strokeWidth = line.strokeWidth * p1.scale.coerceIn(0.5f, 2.0f),
+                            start = Offset(projBuffer1[0], projBuffer1[1]),
+                            end = Offset(projBuffer2[0], projBuffer2[1]),
+                            strokeWidth = line.strokeWidth * projBuffer1[2].coerceIn(0.8f, 2.8f),
                             cap = StrokeCap.Round
                         )
                     }
                 }
             }
 
-            // 2. Draw Origin Collision Spark Effect
-            val originProjected: Point2D? = matrix.projectToScreen(Vector3D.ZERO, width, height)
-            if (originProjected != null) {
+            // 2. Draw Collision Vertex Spark Flare
+            if (matrix.projectToScreenFast(0f, 0f, 0f, width, height, projBuffer1)) {
+                val ox = projBuffer1[0]
+                val oy = projBuffer1[1]
+                val oScale = projBuffer1[2]
+                val sparkRadius = 65f * oScale
+
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFF00E5FF).copy(alpha = 0.9f),
-                            Color(0xFFFF0844).copy(alpha = 0.5f),
+                            Color(0xFF00E5FF).copy(alpha = 0.95f),
+                            Color(0xFFFF0844).copy(alpha = 0.65f),
+                            Color(0xFFFFD600).copy(alpha = 0.25f),
                             Color.Transparent
                         ),
-                        center = Offset(originProjected.x, originProjected.y),
-                        radius = 24f * originProjected.scale
+                        center = Offset(ox, oy),
+                        radius = sparkRadius
                     ),
-                    center = Offset(originProjected.x, originProjected.y),
-                    radius = 24f * originProjected.scale
+                    center = Offset(ox, oy),
+                    radius = sparkRadius
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.95f),
+                    center = Offset(ox, oy),
+                    radius = sparkRadius * 0.2f
                 )
             }
 
@@ -163,27 +177,37 @@ fun Collider3DCanvas(
                 val history = p.trajectoryHistory
 
                 if (history.size > 1) {
-                    val path = Path()
+                    reusablePath.reset()
                     var firstPoint = true
 
                     for (pt in history) {
-                        val proj: Point2D? = matrix.projectToScreen(pt, width, height)
-                        if (proj != null) {
+                        if (matrix.projectToScreenFast(pt.x, pt.y, pt.z, width, height, projBuffer1)) {
                             if (firstPoint) {
-                                path.moveTo(proj.x, proj.y)
+                                reusablePath.moveTo(projBuffer1[0], projBuffer1[1])
                                 firstPoint = false
                             } else {
-                                path.lineTo(proj.x, proj.y)
+                                reusablePath.lineTo(projBuffer1[0], projBuffer1[1])
                             }
                         }
                     }
 
                     if (!firstPoint) {
+                        // Pass 1: Glowing outer aura
                         drawPath(
-                            path = path,
-                            color = pColor.copy(alpha = (0.75f * simState.glowIntensity).coerceIn(0.1f, 1.0f)),
+                            path = reusablePath,
+                            color = pColor.copy(alpha = (0.35f * simState.glowIntensity).coerceIn(0.05f, 0.7f)),
                             style = Stroke(
-                                width = (3.0f * simState.glowIntensity).coerceIn(1f, 8f),
+                                width = (12.0f * simState.glowIntensity).coerceIn(2f, 24f),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+                        // Pass 2: Intense core beam
+                        drawPath(
+                            path = reusablePath,
+                            color = pColor.copy(alpha = (0.95f * simState.glowIntensity).coerceIn(0.2f, 1.0f)),
+                            style = Stroke(
+                                width = (4.5f * simState.glowIntensity).coerceIn(1.5f, 10f),
                                 cap = StrokeCap.Round,
                                 join = StrokeJoin.Round
                             )
@@ -192,18 +216,34 @@ fun Collider3DCanvas(
                 }
 
                 // Draw Particle Head Sphere
-                val headProj: Point2D? = matrix.projectToScreen(p.position, width, height)
-                if (headProj != null) {
-                    val radius = (6f * headProj.scale * simState.glowIntensity).coerceIn(4f, 20f)
+                if (matrix.projectToScreenFast(p.position.x, p.position.y, p.position.z, width, height, projBuffer1)) {
+                    val hx = projBuffer1[0]
+                    val hy = projBuffer1[1]
+                    val hScale = projBuffer1[2]
+                    val radius = (10f * hScale * simState.glowIntensity).coerceIn(6f, 32f)
+
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                pColor.copy(alpha = 0.9f),
+                                pColor.copy(alpha = 0.35f),
+                                Color.Transparent
+                            ),
+                            center = Offset(hx, hy),
+                            radius = radius * 2.2f
+                        ),
+                        center = Offset(hx, hy),
+                        radius = radius * 2.2f
+                    )
                     drawCircle(
                         color = pColor,
-                        center = Offset(headProj.x, headProj.y),
+                        center = Offset(hx, hy),
                         radius = radius
                     )
                     drawCircle(
-                        color = Color.White.copy(alpha = 0.8f),
-                        center = Offset(headProj.x, headProj.y),
-                        radius = radius * 0.4f
+                        color = Color.White.copy(alpha = 0.9f),
+                        center = Offset(hx - radius * 0.25f, hy - radius * 0.25f),
+                        radius = radius * 0.35f
                     )
                 }
             }
@@ -250,6 +290,36 @@ fun Collider3DCanvas(
                         )
                     }
 
+                    // Zoom In Button
+                    IconButton(
+                        onClick = {
+                            camera.zoomIn()
+                            cameraChangeCounter++
+                        },
+                        modifier = Modifier.testTag("zoom_in_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ZoomIn,
+                            contentDescription = "Zoom In 3D",
+                            tint = Color(0xFF00E5FF)
+                        )
+                    }
+
+                    // Zoom Out Button
+                    IconButton(
+                        onClick = {
+                            camera.zoomOut()
+                            cameraChangeCounter++
+                        },
+                        modifier = Modifier.testTag("zoom_out_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ZoomOut,
+                            contentDescription = "Zoom Out 3D",
+                            tint = Color(0xFFFF9100)
+                        )
+                    }
+
                     // Reset Camera
                     IconButton(
                         onClick = {
@@ -268,7 +338,7 @@ fun Collider3DCanvas(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
-                        text = "3D VIEW | 2-FINGER ZOOM & PAN",
+                        text = "ZOOM: %.1fx".format(camera.zoom),
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,

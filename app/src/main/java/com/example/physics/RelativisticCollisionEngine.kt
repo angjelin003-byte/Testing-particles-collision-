@@ -41,7 +41,7 @@ object RelativisticCollisionEngine {
         val particle1 = Particle3D(
             id = "beam_A_" + UUID.randomUUID().toString().take(6),
             species = beamA,
-            position = Vector3D(0f, offsetY, -12f),
+            position = Vector3D(0f, offsetY, -28f),
             momentum = Vector3D(0f, 0f, pzA),
             charge = beamA.charge,
             generation = 0,
@@ -51,7 +51,7 @@ object RelativisticCollisionEngine {
         val particle2 = Particle3D(
             id = "beam_B_" + UUID.randomUUID().toString().take(6),
             species = beamB,
-            position = Vector3D(0f, -offsetY, 12f),
+            position = Vector3D(0f, -offsetY, 28f),
             momentum = Vector3D(0f, 0f, pzB),
             charge = beamB.charge,
             generation = 0,

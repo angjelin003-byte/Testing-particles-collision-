@@ -5,7 +5,7 @@ import com.example.physics.Matrix3D
 class Camera3D(
     var yawRad: Float = 0.5f,
     var pitchRad: Float = 0.35f,
-    var zoom: Float = 1.0f,
+    var zoom: Float = 3.8f,
     var panX: Float = 0f,
     var panY: Float = 0f
 ) {
@@ -15,7 +15,15 @@ class Camera3D(
     }
 
     fun zoomBy(factor: Float) {
-        zoom = (zoom * factor).coerceIn(0.2f, 5.0f)
+        zoom = (zoom * factor).coerceIn(0.4f, 25.0f)
+    }
+
+    fun zoomIn() {
+        zoom = (zoom * 1.25f).coerceIn(0.4f, 25.0f)
+    }
+
+    fun zoomOut() {
+        zoom = (zoom / 1.25f).coerceIn(0.4f, 25.0f)
     }
 
     fun panBy(dx: Float, dy: Float) {
@@ -26,7 +34,7 @@ class Camera3D(
     fun reset() {
         yawRad = 0.5f
         pitchRad = 0.35f
-        zoom = 1.0f
+        zoom = 3.8f
         panX = 0f
         panY = 0f
     }

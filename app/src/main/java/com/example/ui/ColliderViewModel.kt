@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 data class SimulationState(
     val particleA: ParticleSpecies = StandardModelCatalog.PROTON,
@@ -23,7 +24,7 @@ data class SimulationState(
     val electricFieldMVm: Float = 2.0f,
     val luminosityScale: Float = 1.0f,
     val impactParameterFm: Double = 0.2,
-    val timeScale: Float = 0.005f, // slowmo in fractions of c
+    val timeScale: Float = 0.008f, // slowmo in fractions of c
     val isPaused: Boolean = false,
     val wireframeEnabled: Boolean = true,
     val gridOverlayEnabled: Boolean = true,
@@ -31,9 +32,10 @@ data class SimulationState(
     val showEcal: Boolean = true,
     val showHcal: Boolean = true,
     val showMuon: Boolean = true,
-    val glowIntensity: Float = 1.0f,
+    val glowIntensity: Float = 1.2f,
     val isDarkTheme: Boolean = true,
-    val totalCollisionsFired: Long = 0L
+    val totalCollisionsFired: Long = 0L,
+    val isBeamInFlight: Boolean = false
 )
 
 class ColliderViewModel : ViewModel() {
@@ -53,12 +55,12 @@ class ColliderViewModel : ViewModel() {
     val camera = Camera3D()
 
     private var eventCounter = 1001L
+    private var isPendingDetonation = false
 
     init {
-        // Prepare initial incoming beam particles
         resetIncomingBeams()
 
-        // 60 FPS physics tick loop
+        // 60 FPS high-performance physics tick loop
         viewModelScope.launch {
             while (true) {
                 delay(16L) // ~60fps
@@ -78,9 +80,17 @@ class ColliderViewModel : ViewModel() {
             s.impactParameterFm
         )
         _liveParticles.value = beams
+        isPendingDetonation = true
+        _state.update { it.copy(isBeamInFlight = true) }
     }
 
     fun fireCollision() {
+        // Unpause if paused and launch incoming beam particles
+        _state.update { it.copy(isPaused = false, isBeamInFlight = true) }
+        resetIncomingBeams()
+    }
+
+    private fun detonateCollision() {
         val s = _state.value
         eventCounter++
 
@@ -96,7 +106,13 @@ class ColliderViewModel : ViewModel() {
         _currentEvent.value = result
         _eventHistory.update { listOf(result) + it.take(49) }
         _liveParticles.value = result.generatedParticles
-        _state.update { it.copy(totalCollisionsFired = it.totalCollisionsFired + 1) }
+        isPendingDetonation = false
+        _state.update {
+            it.copy(
+                totalCollisionsFired = it.totalCollisionsFired + 1,
+                isBeamInFlight = false
+            )
+        }
     }
 
     private fun stepPhysicsTick() {
@@ -104,8 +120,31 @@ class ColliderViewModel : ViewModel() {
         val particles = _liveParticles.value.toMutableList()
         if (particles.isEmpty()) return
 
-        val dt = s.timeScale * 0.08f
+        val dt = s.timeScale * 0.12f
 
+        // Check if incoming beams reached collision vertex z = 0
+        if (isPendingDetonation) {
+            val beamA = particles.find { it.generation == 0 && it.momentum.z > 0 }
+            val beamB = particles.find { it.generation == 0 && it.momentum.z < 0 }
+
+            if (beamA != null && beamB != null) {
+                // Advance beam particles
+                beamA.step(dt, s.magneticFieldTesla, s.electricFieldMVm)
+                beamB.step(dt, s.magneticFieldTesla, s.electricFieldMVm)
+
+                if (abs(beamA.position.z) <= 0.3f || abs(beamB.position.z) <= 0.3f) {
+                    detonateCollision()
+                    return
+                }
+                _liveParticles.value = listOf(beamA, beamB)
+                return
+            } else {
+                detonateCollision()
+                return
+            }
+        }
+
+        // Advance shower particles
         val updated = mutableListOf<Particle3D>()
         for (p in particles) {
             p.step(dt, s.magneticFieldTesla, s.electricFieldMVm)

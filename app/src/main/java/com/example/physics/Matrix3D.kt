@@ -92,6 +92,32 @@ class Matrix3D private constructor(val m: FloatArray) {
         val screenY = screenHeight / 2f - transformed.y * scale
         return Point2D(screenX, screenY, z, scale)
     }
+
+    /**
+     * Fast zero-allocation projection writing into outResult FloatArray(3) [screenX, screenY, scale]
+     */
+    fun projectToScreenFast(
+        vx: Float, vy: Float, vz: Float,
+        screenWidth: Float,
+        screenHeight: Float,
+        outResult: FloatArray,
+        fovFactor: Float = 600f
+    ): Boolean {
+        val tx = m[0] * vx + m[1] * vy + m[2] * vz + m[3]
+        val ty = m[4] * vx + m[5] * vy + m[6] * vz + m[7]
+        val tz = m[8] * vx + m[9] * vy + m[10] * vz + m[11]
+        val tw = m[12] * vx + m[13] * vy + m[14] * vz + m[15]
+        val invW = if (tw != 0f) 1f / tw else 1f
+
+        val z = (tz * invW) + fovFactor
+        if (z <= 1f) return false
+
+        val scale = fovFactor / z
+        outResult[0] = screenWidth / 2f + (tx * invW) * scale
+        outResult[1] = screenHeight / 2f - (ty * invW) * scale
+        outResult[2] = scale
+        return true
+    }
 }
 
 data class Point2D(

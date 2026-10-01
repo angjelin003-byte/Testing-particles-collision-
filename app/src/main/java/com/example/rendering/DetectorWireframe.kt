@@ -17,7 +17,7 @@ data class WireframeLine(
 object DetectorWireframe {
 
     /**
-     * Generate full 3D wireframe mesh model of a high-energy particle physics detector
+     * Generate 3D wireframe mesh model of particle physics detector (optimized segment count)
      */
     fun buildDetectorMesh(
         showTracker: Boolean = true,
@@ -39,7 +39,7 @@ object DetectorWireframe {
         // 1. BEAM PIPE (Cylinder radius = 0.8m, length = 20m)
         val pipeRadius = 0.8f
         val pipeLength = 10f
-        val segments = 16
+        val segments = 12
 
         for (z in listOf(-pipeLength, -pipeLength / 2f, 0f, pipeLength / 2f, pipeLength)) {
             for (i in 0 until segments) {
@@ -50,8 +50,8 @@ object DetectorWireframe {
                 lines.add(WireframeLine(p1, p2, beamPipeColor, 1.5f, 0.5f))
             }
         }
-        for (i in 0 until 8) {
-            val angle = (2f * PI.toFloat() * i) / 8
+        for (i in 0 until 6) {
+            val angle = (2f * PI.toFloat() * i) / 6
             val pStart = Vector3D(pipeRadius * cos(angle), pipeRadius * sin(angle), -pipeLength)
             val pEnd = Vector3D(pipeRadius * cos(angle), pipeRadius * sin(angle), pipeLength)
             lines.add(WireframeLine(pStart, pEnd, beamPipeColor, 1.0f, 0.4f))
@@ -60,7 +60,7 @@ object DetectorWireframe {
         // 2. INNER SILICON PIXEL TRACKER (Radius = 2.5m)
         if (showTracker) {
             val rTracker = 2.5f
-            for (z in listOf(-6f, -3f, 0f, 3f, 6f)) {
+            for (z in listOf(-5f, 0f, 5f)) {
                 for (i in 0 until segments) {
                     val angle1 = (2f * PI.toFloat() * i) / segments
                     val angle2 = (2f * PI.toFloat() * (i + 1)) / segments
@@ -74,7 +74,7 @@ object DetectorWireframe {
         // 3. ELECTROMAGNETIC CALORIMETER (ECAL - Radius = 4.5m)
         if (showEcal) {
             val rEcal = 4.5f
-            for (z in listOf(-7f, 0f, 7f)) {
+            for (z in listOf(-6f, 0f, 6f)) {
                 for (i in 0 until segments) {
                     val angle1 = (2f * PI.toFloat() * i) / segments
                     val angle2 = (2f * PI.toFloat() * (i + 1)) / segments
@@ -88,7 +88,7 @@ object DetectorWireframe {
         // 4. HADRONIC CALORIMETER (HCAL - Radius = 6.8m)
         if (showHcal) {
             val rHcal = 6.8f
-            for (z in listOf(-8f, 0f, 8f)) {
+            for (z in listOf(-7f, 0f, 7f)) {
                 for (i in 0 until segments) {
                     val angle1 = (2f * PI.toFloat() * i) / segments
                     val angle2 = (2f * PI.toFloat() * (i + 1)) / segments
@@ -102,7 +102,7 @@ object DetectorWireframe {
         // 5. OUTER MUON DRIFT TUBES (Radius = 9.5m)
         if (showMuon) {
             val rMuon = 9.5f
-            for (z in listOf(-9f, 0f, 9f)) {
+            for (z in listOf(-8f, 0f, 8f)) {
                 for (i in 0 until segments) {
                     val angle1 = (2f * PI.toFloat() * i) / segments
                     val angle2 = (2f * PI.toFloat() * (i + 1)) / segments
@@ -122,7 +122,7 @@ object DetectorWireframe {
         // 7. BASE PLANE FIELD GRID OVERLAY
         if (showGrid) {
             val gridSize = 10f
-            val gridStep = 2f
+            val gridStep = 2.5f
             var x = -gridSize
             while (x <= gridSize) {
                 lines.add(WireframeLine(Vector3D(x, -2f, -gridSize), Vector3D(x, -2f, gridSize), gridColor, 1f, 0.25f))
