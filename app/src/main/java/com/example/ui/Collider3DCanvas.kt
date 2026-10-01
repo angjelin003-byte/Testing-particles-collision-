@@ -43,6 +43,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -64,6 +65,7 @@ fun Collider3DCanvas(
 ) {
     val simState by viewModel.state.collectAsState()
     val particles by viewModel.liveParticles.collectAsState()
+    val currentEvent by viewModel.currentEvent.collectAsState()
     val camera = viewModel.camera
 
     val isDark = simState.isDarkTheme
@@ -73,6 +75,7 @@ fun Collider3DCanvas(
     val projBuffer1 = remember { FloatArray(3) }
     val projBuffer2 = remember { FloatArray(3) }
     val reusablePath = remember { Path() }
+    val dashedEffect = remember { PathEffect.dashPathEffect(floatArrayOf(15f, 10f), 0f) }
 
     // Detector Wireframe geometry cache
     val wireframeLines = remember(
@@ -143,7 +146,50 @@ fun Collider3DCanvas(
                 }
             }
 
-            // 2. Draw Collision Vertex Spark Flare
+            // 2. Draw Calorimeter Energy Hit Towers (ECAL & HCAL Sparkling Clusters)
+            currentEvent?.calorimeterHits?.let { hits ->
+                for (hit in hits) {
+                    if (matrix.projectToScreenFast(hit.position.x, hit.position.y, hit.position.z, width, height, projBuffer1)) {
+                        val hx = projBuffer1[0]
+                        val hy = projBuffer1[1]
+                        val hScale = projBuffer1[2]
+                        val towerRadius = (hit.energyGeV.toFloat() * 0.2f * hScale).coerceIn(8f, 28f)
+
+                        drawCircle(
+                            color = hit.color.copy(alpha = 0.85f),
+                            center = Offset(hx, hy),
+                            radius = towerRadius
+                        )
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.9f),
+                            center = Offset(hx, hy),
+                            radius = towerRadius * 0.35f
+                        )
+                    }
+                }
+            }
+
+            // 3. Draw Missing Transverse Energy Vector Arrow (Neutrino E_T_miss)
+            currentEvent?.let { ev ->
+                if (ev.missingETGeV > 2.0) {
+                    val missVec = ev.missingETVector.normalized() * 8.0f
+                    val ok0 = matrix.projectToScreenFast(0f, 0f, 0f, width, height, projBuffer1)
+                    val ok1 = matrix.projectToScreenFast(missVec.x, missVec.y, missVec.z, width, height, projBuffer2)
+
+                    if (ok0 && ok1) {
+                        drawLine(
+                            color = Color(0xFFB9F6CA),
+                            start = Offset(projBuffer1[0], projBuffer1[1]),
+                            end = Offset(projBuffer2[0], projBuffer2[1]),
+                            strokeWidth = 4f * projBuffer1[2],
+                            pathEffect = dashedEffect,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+            }
+
+            // 4. Draw Collision Vertex Spark Flare
             if (matrix.projectToScreenFast(0f, 0f, 0f, width, height, projBuffer1)) {
                 val ox = projBuffer1[0]
                 val oy = projBuffer1[1]
@@ -171,7 +217,7 @@ fun Collider3DCanvas(
                 )
             }
 
-            // 3. Draw Particle Trajectories and Glowing Trails
+            // 5. Draw Particle Trajectories and Glowing Trails
             for (p in particles) {
                 val pColor = p.colorOverride ?: p.species.color
                 val history = p.trajectoryHistory

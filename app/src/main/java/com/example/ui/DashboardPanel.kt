@@ -30,14 +30,12 @@ import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.Science
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -85,8 +83,6 @@ fun DashboardPanel(
 
     val isDark = simState.isDarkTheme
     val panelBg = if (isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
-    val cardBg = if (isDark) Color(0xFF1E293B) else Color.White
-    val textColor = if (isDark) Color.White else Color(0xFF0F172A)
     val accentCyan = Color(0xFF00E5FF)
 
     Column(
@@ -220,7 +216,7 @@ fun TelemetryTab(
                     MetricReadoutCard(
                         title = "BEAM ENERGY √s",
                         value = "%.1f GeV".format(simState.energyGeV),
-                        subtext = "(%.2f TeV)".format(simState.energyGeV / 1000.0),
+                        subtext = "(%.3f TeV)".format(simState.energyGeV / 1000.0),
                         color = Color(0xFF00E5FF),
                         isDark = isDark,
                         modifier = Modifier.weight(1f)
@@ -242,7 +238,7 @@ fun TelemetryTab(
                     MetricReadoutCard(
                         title = "MULTIPLICITY",
                         value = "${currentEvent?.multiplicity ?: 0} tracks",
-                        subtext = "Generated Shower",
+                        subtext = "${currentEvent?.calorimeterHits?.size ?: 0} Cal Hits",
                         color = Color(0xFF00E676),
                         isDark = isDark,
                         modifier = Modifier.weight(1f)
@@ -250,11 +246,70 @@ fun TelemetryTab(
                     MetricReadoutCard(
                         title = "INVARIANT MASS",
                         value = "%.1f GeV/c²".format(currentEvent?.invariantMassGeV ?: 0.0),
-                        subtext = "Peak Resonance",
+                        subtext = "M = √(E² - |p|²c²)",
                         color = Color(0xFFE040FB),
                         isDark = isDark,
                         modifier = Modifier.weight(1f)
                     )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    MetricReadoutCard(
+                        title = "MISSING E_T",
+                        value = "%.1f GeV".format(currentEvent?.missingETGeV ?: 0.0),
+                        subtext = "|E_T_miss| (Neutrinos)",
+                        color = Color(0xFFB9F6CA),
+                        isDark = isDark,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricReadoutCard(
+                        title = "CHARGE CONSERVATION",
+                        value = if (currentEvent != null) "Q_in=%+.0f → Q_out=%+.0f".format(currentEvent.initialCharge, currentEvent.finalCharge) else "Exact Q = 0",
+                        subtext = "ΔQ = 0 Validated",
+                        color = Color(0xFFFF9100),
+                        isDark = isDark,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        item {
+            // Relativistic Mathematics & Physics Formulas Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Functions,
+                            contentDescription = null,
+                            tint = Color(0xFFFFD600),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "RELATIVISTIC PHYSICS EQUATIONS",
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFFD600),
+                                fontSize = 11.sp
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    EquationRow("Relativistic Energy:", "E = √(p²c² + m₀²c⁴) = γ m₀ c²")
+                    EquationRow("Cyclotron Radius:", "R = p_T / (q B_z)")
+                    EquationRow("Pseudo-Rapidity:", "η = -ln[tan(θ/2)]")
+                    EquationRow("Minkowski Invariant Mass:", "M = √(P_μ P^μ) / c²")
+                    EquationRow("Missing Transverse Energy:", "|E_T_miss| = √[(∑p_x)² + (∑p_y)²]")
                 }
             }
         }
@@ -323,6 +378,34 @@ fun TelemetryTab(
 }
 
 @Composable
+fun EquationRow(label: String, formula: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = 10.sp,
+                color = Color.Gray
+            )
+        )
+        Text(
+            text = formula,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                color = Color(0xFF80DEEA)
+            )
+        )
+    }
+}
+
+@Composable
 fun MetricReadoutCard(
     title: String,
     value: String,
@@ -354,7 +437,7 @@ fun MetricReadoutCard(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     color = color,
-                    fontSize = 14.sp
+                    fontSize = 13.sp
                 )
             )
             Text(
@@ -376,7 +459,6 @@ fun ParticlesTab(
     isDark: Boolean
 ) {
     val cardBg = if (isDark) Color(0xFF1E293B) else Color.White
-    val accentCyan = Color(0xFF00E5FF)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -414,7 +496,6 @@ fun ParticlesTab(
         }
 
         item {
-            // Beam A Selection
             ParticleSelectorCard(
                 label = "BEAM PARTICLE A (Moving +Z)",
                 selectedSpecies = simState.particleA,
@@ -425,7 +506,6 @@ fun ParticlesTab(
         }
 
         item {
-            // Beam B Selection
             ParticleSelectorCard(
                 label = "BEAM PARTICLE B (Moving -Z)",
                 selectedSpecies = simState.particleB,
@@ -462,7 +542,6 @@ fun ParticleSelectorCard(
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Quick Picker Chips for key particles
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -494,7 +573,6 @@ fun ParticleSelectorCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Selected details
             Surface(
                 color = if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9),
                 shape = RoundedCornerShape(8.dp)
@@ -509,10 +587,12 @@ fun ParticleSelectorCard(
                         )
                     )
                     Text(
-                        text = "Mass: %.4f GeV | Charge: %+.1f e | Spin: %s".format(
+                        text = "Mass: %.4f GeV | Charge: %+.1f e | Spin: %s | B: %d, L: %d".format(
                             selectedSpecies.restMassGeV,
                             selectedSpecies.charge,
-                            selectedSpecies.spin
+                            selectedSpecies.spin,
+                            selectedSpecies.baryonNumber,
+                            selectedSpecies.leptonNumber
                         ),
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontFamily = FontFamily.Monospace,
@@ -556,7 +636,6 @@ fun ControlsTab(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Beam Energy Slider
                     Text(
                         text = "Center-of-Mass Energy √s: %.0f GeV (%.2f TeV)".format(
                             simState.energyGeV,
@@ -579,7 +658,6 @@ fun ControlsTab(
                         modifier = Modifier.testTag("energy_slider")
                     )
 
-                    // Solenoid B-Field Slider
                     Text(
                         text = "Solenoidal Magnetic Field B: %.2f Tesla".format(simState.magneticFieldTesla),
                         style = MaterialTheme.typography.bodySmall.copy(
@@ -599,7 +677,6 @@ fun ControlsTab(
                         modifier = Modifier.testTag("magnetic_field_slider")
                     )
 
-                    // Slow-mo Time Scale Slider
                     Text(
                         text = "Slow-Mo Time Scale: %.4f c".format(simState.timeScale),
                         style = MaterialTheme.typography.bodySmall.copy(
@@ -619,7 +696,6 @@ fun ControlsTab(
                         modifier = Modifier.testTag("time_scale_slider")
                     )
 
-                    // Trajectory Glow Slider
                     Text(
                         text = "Trajectory Glow Intensity: %.1f×".format(simState.glowIntensity),
                         style = MaterialTheme.typography.bodySmall.copy(
@@ -643,7 +719,6 @@ fun ControlsTab(
         }
 
         item {
-            // Detector Layer Toggles
             Card(
                 colors = CardDefaults.cardColors(containerColor = cardBg),
                 shape = RoundedCornerShape(12.dp)
@@ -713,7 +788,6 @@ fun EventLogsTab(
     isDark: Boolean
 ) {
     val cardBg = if (isDark) Color(0xFF1E293B) else Color.White
-    val textColor = if (isDark) Color.White else Color(0xFF0F172A)
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(

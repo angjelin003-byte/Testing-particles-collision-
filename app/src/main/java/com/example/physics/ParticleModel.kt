@@ -22,6 +22,8 @@ data class ParticleSpecies(
     val category: ParticleCategory,
     val color: Color,
     val meanLifetimeNs: Double, // in nanoseconds, Double.POSITIVE_INFINITY for stable
+    val baryonNumber: Int = 0,
+    val leptonNumber: Int = 0,
     val description: String
 )
 
@@ -47,7 +49,8 @@ object StandardModelCatalog {
         category = ParticleCategory.HADRON,
         color = ColorHadron,
         meanLifetimeNs = Double.POSITIVE_INFINITY,
-        description = "Stable composite hadron composed of uud quarks. Primary beam particle at LHC."
+        baryonNumber = 1,
+        description = "Stable composite hadron composed of uud valence quarks. Primary beam particle at LHC."
     )
 
     val ANTIPROTON = ParticleSpecies(
@@ -61,6 +64,7 @@ object StandardModelCatalog {
         category = ParticleCategory.HADRON,
         color = Color(0xFF00B0FF),
         meanLifetimeNs = Double.POSITIVE_INFINITY,
+        baryonNumber = -1,
         description = "Antimatter counterpart of proton composed of u̅u̅d̅ anti-quarks."
     )
 
@@ -75,7 +79,8 @@ object StandardModelCatalog {
         category = ParticleCategory.LEPTON,
         color = ColorLepton,
         meanLifetimeNs = Double.POSITIVE_INFINITY,
-        description = "First generation charged lepton. Fundamental point-like particle."
+        leptonNumber = 1,
+        description = "First generation charged lepton. Fundamental point-like particle. Leaves ionization track in Inner Tracker."
     )
 
     val POSITRON = ParticleSpecies(
@@ -89,6 +94,7 @@ object StandardModelCatalog {
         category = ParticleCategory.LEPTON,
         color = ColorAntiLepton,
         meanLifetimeNs = Double.POSITIVE_INFINITY,
+        leptonNumber = -1,
         description = "Antimatter counterpart of electron. Annihilates upon contact with matter."
     )
 
@@ -103,7 +109,8 @@ object StandardModelCatalog {
         category = ParticleCategory.LEPTON,
         color = Color(0xFF1DE9B6),
         meanLifetimeNs = 2196.98,
-        description = "Second generation lepton. Penetrates deeply into muon chambers."
+        leptonNumber = 1,
+        description = "Second generation lepton. Minimum ionizing particle penetrating through calorimeters into outer Muon Chambers."
     )
 
     val MUON_PLUS = ParticleSpecies(
@@ -117,6 +124,7 @@ object StandardModelCatalog {
         category = ParticleCategory.LEPTON,
         color = Color(0xFFA7FFEB),
         meanLifetimeNs = 2196.98,
+        leptonNumber = -1,
         description = "Positively charged anti-muon lepton."
     )
 
@@ -131,13 +139,14 @@ object StandardModelCatalog {
         category = ParticleCategory.LEPTON,
         color = Color(0xFF00BFA5),
         meanLifetimeNs = 0.00029,
+        leptonNumber = 1,
         description = "Heavy third generation lepton. Decays rapidly into hadrons or lighter leptons."
     )
 
     val NEUTRINO_ELECTRON = ParticleSpecies(
         id = "neutrino_e",
-        name = "Electron Neutrino",
-        symbol = "νₑ",
+        name = "Neutrino",
+        symbol = "ν",
         restMassGeV = 0.000000001,
         charge = 0.0,
         spin = "1/2",
@@ -145,7 +154,50 @@ object StandardModelCatalog {
         category = ParticleCategory.LEPTON,
         color = Color(0xFFB9F6CA),
         meanLifetimeNs = Double.POSITIVE_INFINITY,
-        description = "Neutral light lepton. Escapes detector undetected as missing transverse energy."
+        leptonNumber = 1,
+        description = "Neutral light lepton. Escapes detector undetected as missing transverse energy (E_T_miss)."
+    )
+
+    val PION_PLUS = ParticleSpecies(
+        id = "pion_plus",
+        name = "Pion +",
+        symbol = "π⁺",
+        restMassGeV = 0.139570,
+        charge = 1.0,
+        spin = "0",
+        isAntimatter = false,
+        category = ParticleCategory.HADRON,
+        color = Color(0xFF00E5FF),
+        meanLifetimeNs = 26.03,
+        description = "Lightest meson hadron composed of u d̅ quarks. Primary component of quark/gluon jet fragmentation."
+    )
+
+    val PION_MINUS = ParticleSpecies(
+        id = "pion_minus",
+        name = "Pion -",
+        symbol = "π⁻",
+        restMassGeV = 0.139570,
+        charge = -1.0,
+        spin = "0",
+        isAntimatter = false,
+        category = ParticleCategory.HADRON,
+        color = Color(0xFF00B0FF),
+        meanLifetimeNs = 26.03,
+        description = "Negatively charged pion meson."
+    )
+
+    val PION_ZERO = ParticleSpecies(
+        id = "pion_zero",
+        name = "Neutral Pion",
+        symbol = "π⁰",
+        restMassGeV = 0.134977,
+        charge = 0.0,
+        spin = "0",
+        isAntimatter = false,
+        category = ParticleCategory.HADRON,
+        color = Color(0xFF80DEEA),
+        meanLifetimeNs = 0.000000084,
+        description = "Neutral meson decaying almost instantly into photon pairs (π⁰ → γγ)."
     )
 
     val UP_QUARK = ParticleSpecies(
@@ -159,7 +211,7 @@ object StandardModelCatalog {
         category = ParticleCategory.QUARK,
         color = ColorQuark,
         meanLifetimeNs = Double.POSITIVE_INFINITY,
-        description = "Lightest quark. Fractional charge +2/3 e."
+        description = "Lightest quark with fractional electric charge +2/3 e."
     )
 
     val DOWN_QUARK = ParticleSpecies(
@@ -173,7 +225,7 @@ object StandardModelCatalog {
         category = ParticleCategory.QUARK,
         color = Color(0xFFFF1744),
         meanLifetimeNs = Double.POSITIVE_INFINITY,
-        description = "First generation quark. Fractional charge -1/3 e."
+        description = "First generation quark with fractional electric charge -1/3 e."
     )
 
     val TOP_QUARK = ParticleSpecies(
@@ -187,7 +239,7 @@ object StandardModelCatalog {
         category = ParticleCategory.QUARK,
         color = Color(0xFFD50000),
         meanLifetimeNs = 0.0000000005,
-        description = "Heaviest known elementary particle. Decays before hadronizing."
+        description = "Heaviest known elementary particle. Decays electroweakly before hadronizing."
     )
 
     val PHOTON = ParticleSpecies(
@@ -201,7 +253,7 @@ object StandardModelCatalog {
         category = ParticleCategory.GAUGE_BOSON,
         color = ColorBoson,
         meanLifetimeNs = Double.POSITIVE_INFINITY,
-        description = "Massless gauge boson of electromagnetism. Leaves energy cluster in ECAL."
+        description = "Massless gauge boson of electromagnetism. Deposits energy shower cluster in ECAL."
     )
 
     val GLUON = ParticleSpecies(
@@ -215,7 +267,7 @@ object StandardModelCatalog {
         category = ParticleCategory.GAUGE_BOSON,
         color = Color(0xFFFFEA00),
         meanLifetimeNs = Double.POSITIVE_INFINITY,
-        description = "Massless gauge boson carrying color charge for the strong interaction."
+        description = "Massless gauge boson carrying color charge for quantum chromodynamics (QCD)."
     )
 
     val W_PLUS_BOSON = ParticleSpecies(
@@ -229,7 +281,7 @@ object StandardModelCatalog {
         category = ParticleCategory.GAUGE_BOSON,
         color = Color(0xFFFFC400),
         meanLifetimeNs = 0.000000003,
-        description = "Heavy charged gauge boson mediating weak interaction."
+        description = "Heavy charged gauge boson mediating the weak force."
     )
 
     val Z_BOSON = ParticleSpecies(
@@ -243,7 +295,7 @@ object StandardModelCatalog {
         category = ParticleCategory.GAUGE_BOSON,
         color = Color(0xFFFFAB00),
         meanLifetimeNs = 0.000000003,
-        description = "Heavy neutral gauge boson. Decays into dilepton pairs or quark jets."
+        description = "Heavy neutral gauge boson. Decays into dilepton pairs (e⁺e⁻, μ⁺μ⁻) or quark-antiquark jets."
     )
 
     val HIGGS_BOSON = ParticleSpecies(
@@ -270,8 +322,9 @@ object StandardModelCatalog {
         isAntimatter = false,
         category = ParticleCategory.HADRON,
         color = Color(0xFF80DEEA),
-        meanLifetimeNs = 8.794e11, // ~879 seconds
-        description = "Neutral hadron composite udd. Deposits energy in Hadronic Calorimeter."
+        meanLifetimeNs = 8.794e11,
+        baryonNumber = 1,
+        description = "Neutral hadron composite udd. Deposits energy cluster in Hadronic Calorimeter (HCAL)."
     )
 
     val ALPHA_PARTICLE = ParticleSpecies(
@@ -285,6 +338,7 @@ object StandardModelCatalog {
         category = ParticleCategory.NUCLEUS,
         color = ColorNucleus,
         meanLifetimeNs = Double.POSITIVE_INFINITY,
+        baryonNumber = 4,
         description = "Helium-4 nucleus with 2 protons and 2 neutrons."
     )
 
@@ -299,14 +353,15 @@ object StandardModelCatalog {
         category = ParticleCategory.NUCLEUS,
         color = Color(0xFFFF6D00),
         meanLifetimeNs = Double.POSITIVE_INFINITY,
+        baryonNumber = 208,
         description = "Heavy lead ion nucleus used in ultra-relativistic heavy-ion collision runs at LHC."
     )
 
     val ALL_SPECIES = listOf(
         PROTON, ANTIPROTON, ELECTRON, POSITRON, MUON_MINUS, MUON_PLUS,
-        TAU_MINUS, NEUTRINO_ELECTRON, UP_QUARK, DOWN_QUARK, TOP_QUARK,
-        PHOTON, GLUON, W_PLUS_BOSON, Z_BOSON, HIGGS_BOSON, NEUTRON,
-        ALPHA_PARTICLE, LEAD_ION
+        TAU_MINUS, NEUTRINO_ELECTRON, PION_PLUS, PION_MINUS, PION_ZERO,
+        UP_QUARK, DOWN_QUARK, TOP_QUARK, PHOTON, GLUON, W_PLUS_BOSON, Z_BOSON, HIGGS_BOSON,
+        NEUTRON, ALPHA_PARTICLE, LEAD_ION
     )
 
     fun getById(id: String): ParticleSpecies {
