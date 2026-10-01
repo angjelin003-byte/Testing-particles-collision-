@@ -1,0 +1,217 @@
+package com.example.ui
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.physics.CollisionEventResult
+import com.example.physics.Particle3D
+import com.example.physics.ParticleSpecies
+import com.example.physics.RelativisticCollisionEngine
+import com.example.physics.StandardModelCatalog
+import com.example.rendering.Camera3D
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class SimulationState(
+    val particleA: ParticleSpecies = StandardModelCatalog.PROTON,
+    val particleB: ParticleSpecies = StandardModelCatalog.PROTON,
+    val energyGeV: Double = 13600.0, // 13.6 TeV
+    val magneticFieldTesla: Float = 3.8f, // LHC Solenoid field = 3.8T
+    val electricFieldMVm: Float = 2.0f,
+    val luminosityScale: Float = 1.0f,
+    val impactParameterFm: Double = 0.2,
+    val timeScale: Float = 0.005f, // slowmo in fractions of c
+    val isPaused: Boolean = false,
+    val wireframeEnabled: Boolean = true,
+    val gridOverlayEnabled: Boolean = true,
+    val showTracker: Boolean = true,
+    val showEcal: Boolean = true,
+    val showHcal: Boolean = true,
+    val showMuon: Boolean = true,
+    val glowIntensity: Float = 1.0f,
+    val isDarkTheme: Boolean = true,
+    val totalCollisionsFired: Long = 0L
+)
+
+class ColliderViewModel : ViewModel() {
+
+    private val _state = MutableStateFlow(SimulationState())
+    val state: StateFlow<SimulationState> = _state.asStateFlow()
+
+    private val _liveParticles = MutableStateFlow<List<Particle3D>>(emptyList())
+    val liveParticles: StateFlow<List<Particle3D>> = _liveParticles.asStateFlow()
+
+    private val _eventHistory = MutableStateFlow<List<CollisionEventResult>>(emptyList())
+    val eventHistory: StateFlow<List<CollisionEventResult>> = _eventHistory.asStateFlow()
+
+    private val _currentEvent = MutableStateFlow<CollisionEventResult?>(null)
+    val currentEvent: StateFlow<CollisionEventResult?> = _currentEvent.asStateFlow()
+
+    val camera = Camera3D()
+
+    private var eventCounter = 1001L
+
+    init {
+        // Prepare initial incoming beam particles
+        resetIncomingBeams()
+
+        // 60 FPS physics tick loop
+        viewModelScope.launch {
+            while (true) {
+                delay(16L) // ~60fps
+                if (!_state.value.isPaused) {
+                    stepPhysicsTick()
+                }
+            }
+        }
+    }
+
+    private fun resetIncomingBeams() {
+        val s = _state.value
+        val beams = RelativisticCollisionEngine.createIncomingBeams(
+            s.particleA,
+            s.particleB,
+            s.energyGeV / 2.0,
+            s.impactParameterFm
+        )
+        _liveParticles.value = beams
+    }
+
+    fun fireCollision() {
+        val s = _state.value
+        eventCounter++
+
+        val result = RelativisticCollisionEngine.simulateCollision(
+            eventId = eventCounter,
+            beamA = s.particleA,
+            beamB = s.particleB,
+            centerOfMassEnergyGeV = s.energyGeV,
+            impactParameterFm = s.impactParameterFm,
+            luminosityScale = s.luminosityScale
+        )
+
+        _currentEvent.value = result
+        _eventHistory.update { listOf(result) + it.take(49) }
+        _liveParticles.value = result.generatedParticles
+        _state.update { it.copy(totalCollisionsFired = it.totalCollisionsFired + 1) }
+    }
+
+    private fun stepPhysicsTick() {
+        val s = _state.value
+        val particles = _liveParticles.value.toMutableList()
+        if (particles.isEmpty()) return
+
+        val dt = s.timeScale * 0.08f
+
+        val updated = mutableListOf<Particle3D>()
+        for (p in particles) {
+            p.step(dt, s.magneticFieldTesla, s.electricFieldMVm)
+            if (!p.isEscaped) {
+                updated.add(p)
+            }
+        }
+
+        _liveParticles.value = updated
+    }
+
+    fun stepSingleFrame() {
+        stepPhysicsTick()
+    }
+
+    fun setParticleA(species: ParticleSpecies) {
+        _state.update { it.copy(particleA = species) }
+        resetIncomingBeams()
+    }
+
+    fun setParticleB(species: ParticleSpecies) {
+        _state.update { it.copy(particleB = species) }
+        resetIncomingBeams()
+    }
+
+    fun setEnergyGeV(energy: Double) {
+        _state.update { it.copy(energyGeV = energy) }
+        resetIncomingBeams()
+    }
+
+    fun setMagneticFieldTesla(b: Float) {
+        _state.update { it.copy(magneticFieldTesla = b) }
+    }
+
+    fun setElectricFieldMVm(e: Float) {
+        _state.update { it.copy(electricFieldMVm = e) }
+    }
+
+    fun setTimeScale(scale: Float) {
+        _state.update { it.copy(timeScale = scale) }
+    }
+
+    fun setGlowIntensity(glow: Float) {
+        _state.update { it.copy(glowIntensity = glow) }
+    }
+
+    fun togglePause() {
+        _state.update { it.copy(isPaused = !it.isPaused) }
+    }
+
+    fun toggleWireframe() {
+        _state.update { it.copy(wireframeEnabled = !it.wireframeEnabled) }
+    }
+
+    fun toggleGrid() {
+        _state.update { it.copy(gridOverlayEnabled = !it.gridOverlayEnabled) }
+    }
+
+    fun toggleTheme() {
+        _state.update { it.copy(isDarkTheme = !it.isDarkTheme) }
+    }
+
+    fun resetCamera() {
+        camera.reset()
+    }
+
+    fun toggleTrackerLayer() {
+        _state.update { it.copy(showTracker = !it.showTracker) }
+    }
+
+    fun toggleEcalLayer() {
+        _state.update { it.copy(showEcal = !it.showEcal) }
+    }
+
+    fun toggleHcalLayer() {
+        _state.update { it.copy(showHcal = !it.showHcal) }
+    }
+
+    fun toggleMuonLayer() {
+        _state.update { it.copy(showMuon = !it.showMuon) }
+    }
+
+    fun clearLogs() {
+        _eventHistory.value = emptyList()
+        _currentEvent.value = null
+    }
+
+    fun formatAllLogsForExport(): String {
+        val history = _eventHistory.value
+        if (history.isEmpty()) {
+            return "No particle collision event logs recorded yet.\nTrigger a collision in the dashboard to generate event data."
+        }
+
+        val sb = StringBuilder()
+        sb.append("=====================================================\n")
+        sb.append("  3D RELATIVISTIC PARTICLE COLLIDER DATA LOG EXPORT  \n")
+        sb.append("  Export Timestamp: ${System.currentTimeMillis()}\n")
+        sb.append("  Total Recorded Events: ${history.size}\n")
+        sb.append("=====================================================\n\n")
+
+        for ((idx, ev) in history.withIndex()) {
+            sb.append("--- [EVENT RECORD #${idx + 1} / ID:${ev.eventId}] ---\n")
+            sb.append(ev.decayTreeFormatted)
+            sb.append("\n\n")
+        }
+
+        return sb.toString()
+    }
+}

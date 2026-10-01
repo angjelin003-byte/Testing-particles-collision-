@@ -1,0 +1,6 @@
+{
+  "name": "Particle Collider 3D",
+  "description": "Interactive 3D Virtual Relativistic Particle Collider and Live Physics Environment with telemetry and decay visualization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
