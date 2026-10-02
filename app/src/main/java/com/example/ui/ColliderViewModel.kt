@@ -4,13 +4,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.physics.CalorimeterHit
+import com.example.physics.CollisionChannelMode
 import com.example.physics.CollisionEventResult
+import com.example.physics.PacketDualityMode
+import com.example.physics.PacketEjectionEngine
 import com.example.physics.Particle3D
 import com.example.physics.ParticleCategory
+import com.example.physics.ParticlePacket3D
 import com.example.physics.ParticleSpecies
 import com.example.physics.RelativisticCollisionEngine
 import com.example.physics.StandardModelCatalog
 import com.example.physics.Vector3D
+import com.example.physics.WavePacket3D
 import com.example.rendering.Camera3D
 import com.example.rendering.ViewProjectionMode
 import kotlinx.coroutines.delay
@@ -69,10 +74,17 @@ data class SimulationState(
     val trailAlpha: Float = 0.85f,    // 0.2 to 1.0
     val trailColorMode: TrailColorMode = TrailColorMode.SPECIES_COLOR,
     val projectionMode: ViewProjectionMode = ViewProjectionMode.PERSPECTIVE,
+    val channelMode: CollisionChannelMode = CollisionChannelMode.AUTO,
     val bgPresetIndex: Int = 0,
     val bgHue: Float = 220f,         // 0f to 360f
     val bgSaturation: Float = 0.45f, // 0f to 1.0f
-    val bgBrightness: Float = 0.08f  // 0.02f to 1.0f
+    val bgBrightness: Float = 0.08f, // 0.02f to 1.0f
+    val enableWavePacketEjection: Boolean = true,
+    val enableParticlePacketEjection: Boolean = true,
+    val wavePacketDispersionRate: Float = 1.0f,
+    val wavePacketFrequencyScale: Float = 1.0f,
+    val particlePacketConeScale: Float = 1.0f,
+    val packetDualityMode: PacketDualityMode = PacketDualityMode.DUAL_WAVE_PARTICLE
 )
 
 class ColliderViewModel : ViewModel() {
@@ -82,6 +94,12 @@ class ColliderViewModel : ViewModel() {
 
     private val _liveParticles = MutableStateFlow<List<Particle3D>>(emptyList())
     val liveParticles: StateFlow<List<Particle3D>> = _liveParticles.asStateFlow()
+
+    private val _liveWavePackets = MutableStateFlow<List<WavePacket3D>>(emptyList())
+    val liveWavePackets: StateFlow<List<WavePacket3D>> = _liveWavePackets.asStateFlow()
+
+    private val _liveParticlePackets = MutableStateFlow<List<ParticlePacket3D>>(emptyList())
+    val liveParticlePackets: StateFlow<List<ParticlePacket3D>> = _liveParticlePackets.asStateFlow()
 
     private val _activeCalorimeterHits = MutableStateFlow<List<CalorimeterHit>>(emptyList())
     val activeCalorimeterHits: StateFlow<List<CalorimeterHit>> = _activeCalorimeterHits.asStateFlow()
@@ -121,6 +139,8 @@ class ColliderViewModel : ViewModel() {
             s.impactParameterFm
         )
         _liveParticles.value = beams
+        _liveWavePackets.value = emptyList()
+        _liveParticlePackets.value = emptyList()
         _activeCalorimeterHits.value = emptyList()
         depositedParticleIds.clear()
         isPendingDetonation = true
@@ -142,12 +162,23 @@ class ColliderViewModel : ViewModel() {
             beamB = s.particleB,
             centerOfMassEnergyGeV = s.energyGeV,
             impactParameterFm = s.impactParameterFm,
-            luminosityScale = s.luminosityScale
+            luminosityScale = s.luminosityScale,
+            channelMode = s.channelMode
         )
 
         _currentEvent.value = result
         _eventHistory.update { listOf(result) + it.take(49) }
         _liveParticles.value = result.generatedParticles
+
+        // Generate Quantum Wave Packets & Collimated Particle Packets ejected after main collision
+        val (wavePkts, particlePkts) = PacketEjectionEngine.createCollisionPackets(
+            generatedParticles = result.generatedParticles,
+            sqrtSGeV = s.energyGeV,
+            channelMode = s.channelMode
+        )
+        _liveWavePackets.value = wavePkts
+        _liveParticlePackets.value = particlePkts
+
         _activeCalorimeterHits.value = emptyList()
         depositedParticleIds.clear()
         isPendingDetonation = false
@@ -231,6 +262,39 @@ class ColliderViewModel : ViewModel() {
 
         updated.addAll(newSecondary)
         _liveParticles.value = updated
+
+        // Step live Quantum Wave Packets
+        val currentWavePackets = _liveWavePackets.value
+        if (currentWavePackets.isNotEmpty()) {
+            val updatedWavePackets = mutableListOf<WavePacket3D>()
+            for (wp in currentWavePackets) {
+                wp.step(
+                    dtSeconds = dt,
+                    dispersionRate = s.wavePacketDispersionRate,
+                    frequencyScale = s.wavePacketFrequencyScale
+                )
+                if (!wp.isDissipated) {
+                    updatedWavePackets.add(wp)
+                }
+            }
+            _liveWavePackets.value = updatedWavePackets
+        }
+
+        // Step live Collimated Particle Packets
+        val currentParticlePackets = _liveParticlePackets.value
+        if (currentParticlePackets.isNotEmpty()) {
+            val updatedParticlePackets = mutableListOf<ParticlePacket3D>()
+            for (pp in currentParticlePackets) {
+                pp.step(
+                    dtSeconds = dt,
+                    coneScale = s.particlePacketConeScale
+                )
+                if (!pp.isEscaped) {
+                    updatedParticlePackets.add(pp)
+                }
+            }
+            _liveParticlePackets.value = updatedParticlePackets
+        }
     }
 
     fun stepSingleFrame() {
@@ -282,6 +346,10 @@ class ColliderViewModel : ViewModel() {
 
     fun setTrailColorMode(mode: TrailColorMode) {
         _state.update { it.copy(trailColorMode = mode) }
+    }
+
+    fun setChannelMode(mode: CollisionChannelMode) {
+        _state.update { it.copy(channelMode = mode) }
     }
 
     fun setProjectionMode(mode: ViewProjectionMode) {
@@ -369,6 +437,30 @@ class ColliderViewModel : ViewModel() {
 
     fun toggleMuonLayer() {
         _state.update { it.copy(showMuon = !it.showMuon) }
+    }
+
+    fun setEnableWavePacketEjection(enabled: Boolean) {
+        _state.update { it.copy(enableWavePacketEjection = enabled) }
+    }
+
+    fun setEnableParticlePacketEjection(enabled: Boolean) {
+        _state.update { it.copy(enableParticlePacketEjection = enabled) }
+    }
+
+    fun setWavePacketDispersionRate(rate: Float) {
+        _state.update { it.copy(wavePacketDispersionRate = rate.coerceIn(0.2f, 3.0f)) }
+    }
+
+    fun setWavePacketFrequencyScale(scale: Float) {
+        _state.update { it.copy(wavePacketFrequencyScale = scale.coerceIn(0.3f, 3.0f)) }
+    }
+
+    fun setParticlePacketConeScale(scale: Float) {
+        _state.update { it.copy(particlePacketConeScale = scale.coerceIn(0.4f, 3.0f)) }
+    }
+
+    fun setPacketDualityMode(mode: PacketDualityMode) {
+        _state.update { it.copy(packetDualityMode = mode) }
     }
 
     fun clearLogs() {

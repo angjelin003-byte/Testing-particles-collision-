@@ -62,7 +62,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.physics.CollisionChannelMode
 import com.example.physics.CollisionEventResult
+import com.example.physics.PacketDualityMode
 import com.example.physics.ParticleCategory
 import com.example.physics.ParticleSpecies
 import com.example.physics.StandardModelCatalog
@@ -273,6 +275,60 @@ fun TelemetryTab(
                         color = Color(0xFFFF9100),
                         isDark = isDark,
                         modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "COLLISION CHANNELS & OBSERVABLE YIELDS",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF00E5FF),
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Particle production governed by QED, QCD, and Electroweak cross-sections and √s:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 9.5.sp,
+                            color = Color.Gray
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    YieldSummaryRow(
+                        channel = "1. Elastic Scattering (2 → 2)",
+                        intermediate = "2 elementary fermions",
+                        finalObs = "Exactly 2 stable particles"
+                    )
+                    YieldSummaryRow(
+                        channel = "2. Leptonic Annihilation (2 → 2)",
+                        intermediate = "1 virtual mediator (γ*/Z⁰)",
+                        finalObs = "Exactly 2 stable leptons"
+                    )
+                    YieldSummaryRow(
+                        channel = "3. Radiative QED (2 → 3)",
+                        intermediate = "3 elementary particles",
+                        finalObs = "Exactly 3 particles (ℓ⁺ℓ⁻γ)"
+                    )
+                    YieldSummaryRow(
+                        channel = "4. Electroweak Bosons (2 → 4)",
+                        intermediate = "2 vector bosons (W⁺W⁻ / Z⁰Z⁰)",
+                        finalObs = "Exactly 4 fermions (leptons+ν)"
+                    )
+                    YieldSummaryRow(
+                        channel = "5. Hadronization & QCD Jets",
+                        intermediate = "2 primary quarks (q q̄)",
+                        finalObs = "20 to 80+ composite hadrons"
                     )
                 }
             }
@@ -493,6 +549,88 @@ fun ParticlesTab(
                         fontSize = 13.sp
                     )
                 )
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "INTERACTION CHANNEL & MULTIPLICITY REGIME",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF00E5FF),
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Physical probabilities dictate intermediate states and final observable yields:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 9.5.sp,
+                            color = Color.Gray
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CollisionChannelMode.entries.forEach { mode ->
+                            val isSelected = mode == simState.channelMode
+                            val chipBg = if (isSelected) Color(0xFF00E5FF) else (if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                            val chipText = if (isSelected) Color.Black else (if (isDark) Color.White else Color.Black)
+
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { viewModel.setChannelMode(mode) }
+                                    .testTag("channel_mode_${mode.name}"),
+                                color = chipBg
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+                                    Text(
+                                        text = mode.displayName,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = chipText,
+                                            fontSize = 10.sp
+                                        )
+                                    )
+                                    Text(
+                                        text = "Yield: ${mode.expectedParticlesText}",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 8.5.sp,
+                                            color = if (isSelected) Color.Black.copy(alpha = 0.8f) else Color.Gray
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Surface(
+                        color = if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = simState.channelMode.description,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.5.sp,
+                                color = if (isDark) Color(0xFF80DEEA) else Color(0xFF006064)
+                            ),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
             }
         }
 
@@ -1046,6 +1184,230 @@ fun ControlsTab(
         }
 
         item {
+            // Quantum Wave Packet & Collimated Particle Packet Ejection Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "WAVE & PARTICLE PACKET EJECTION",
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF00E5FF),
+                                fontSize = 11.sp
+                            )
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF00E5FF).copy(alpha = 0.20f)
+                        ) {
+                            Text(
+                                text = "QUANTUM DUALITY",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 8.5.sp,
+                                    color = Color(0xFF00E5FF)
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Ejection Visualization Mode:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        PacketDualityMode.entries.forEach { mode ->
+                            val isSelected = mode == simState.packetDualityMode
+                            val chipBg = if (isSelected) Color(0xFF00E5FF) else (if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                            val chipText = if (isSelected) Color.Black else (if (isDark) Color.White else Color.Black)
+
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { viewModel.setPacketDualityMode(mode) }
+                                    .testTag("packet_duality_mode_${mode.name}"),
+                                color = chipBg
+                            ) {
+                                Text(
+                                    text = mode.displayName,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = chipText,
+                                        fontSize = 10.sp
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = simState.packetDualityMode.description,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            color = if (isDark) Color(0xFF80DEEA) else Color(0xFF006064)
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Wave Packet Toggle Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Quantum Wave Packet Ejection (ψ)",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor,
+                                    fontSize = 11.sp
+                                )
+                            )
+                            Text(
+                                text = "De Broglie phase ripples & Gaussian probability envelope",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    color = Color.Gray
+                                )
+                            )
+                        }
+                        Switch(
+                            checked = simState.enableWavePacketEjection,
+                            onCheckedChange = { viewModel.setEnableWavePacketEjection(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00E5FF),
+                                checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("enable_wave_packets_switch")
+                        )
+                    }
+
+                    // Particle Packet Toggle Row
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Collimated Particle Packet Ejection",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor,
+                                    fontSize = 11.sp
+                                )
+                            )
+                            Text(
+                                text = "Collimated parton clusters, di-jet cones & bunch centroids",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    color = Color.Gray
+                                )
+                            )
+                        }
+                        Switch(
+                            checked = simState.enableParticlePacketEjection,
+                            onCheckedChange = { viewModel.setEnableParticlePacketEjection(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFFFF9100),
+                                checkedTrackColor = Color(0xFFFF9100).copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("enable_particle_packets_switch")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Wave Packet Dispersion Slider
+                    Text(
+                        text = "Wave Dispersion Rate σ(t): %.2f×".format(simState.wavePacketDispersionRate),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.wavePacketDispersionRate,
+                        onValueChange = { viewModel.setWavePacketDispersionRate(it) },
+                        valueRange = 0.2f..3.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF00E5FF),
+                            activeTrackColor = Color(0xFF00E5FF)
+                        ),
+                        modifier = Modifier.testTag("wave_dispersion_slider")
+                    )
+
+                    // Wave Phase Oscillation Frequency Slider
+                    Text(
+                        text = "Wavefront Phase Frequency ω: %.2f×".format(simState.wavePacketFrequencyScale),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.wavePacketFrequencyScale,
+                        onValueChange = { viewModel.setWavePacketFrequencyScale(it) },
+                        valueRange = 0.3f..3.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF69F0AE),
+                            activeTrackColor = Color(0xFF69F0AE)
+                        ),
+                        modifier = Modifier.testTag("wave_frequency_slider")
+                    )
+
+                    // Particle Packet Cone Scale Slider
+                    Text(
+                        text = "Particle Bunch Cone Opening: %.2f×".format(simState.particlePacketConeScale),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.particlePacketConeScale,
+                        onValueChange = { viewModel.setParticlePacketConeScale(it) },
+                        valueRange = 0.4f..3.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFFFF9100),
+                            activeTrackColor = Color(0xFFFF9100)
+                        ),
+                        modifier = Modifier.testTag("particle_cone_slider")
+                    )
+                }
+            }
+        }
+
+        item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = cardBg),
                 shape = RoundedCornerShape(12.dp)
@@ -1313,6 +1675,46 @@ fun EventLogsTab(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun YieldSummaryRow(channel: String, intermediate: String, finalObs: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Text(
+                text = channel,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp,
+                    color = Color(0xFF00E5FF)
+                )
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Intermediate: $intermediate",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = Color.Gray)
+                )
+                Text(
+                    text = "Yield: $finalObs",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 9.sp,
+                        color = Color(0xFFFFD600)
+                    )
+                )
             }
         }
     }

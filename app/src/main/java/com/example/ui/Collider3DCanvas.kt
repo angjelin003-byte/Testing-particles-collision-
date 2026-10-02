@@ -26,14 +26,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Brightness7
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Grain
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Waves
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Icon
@@ -55,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -69,13 +73,26 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.physics.FourVector
+import com.example.physics.PacketDualityMode
 import com.example.physics.Particle3D
 import com.example.physics.ParticleCategory
+import com.example.physics.ParticlePacket3D
+import com.example.physics.Vector3D
+import com.example.physics.WavePacket3D
 import com.example.rendering.DetectorWireframe
 import com.example.rendering.ViewProjectionMode
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
+
+sealed interface InspectedEntity {
+    data class Particle(val p: Particle3D) : InspectedEntity
+    data class WavePacket(val wp: WavePacket3D) : InspectedEntity
+    data class ParticlePacket(val pp: ParticlePacket3D) : InspectedEntity
+}
 
 @Composable
 fun Collider3DCanvas(
@@ -85,6 +102,8 @@ fun Collider3DCanvas(
 ) {
     val simState by viewModel.state.collectAsState()
     val particles by viewModel.liveParticles.collectAsState()
+    val wavePackets by viewModel.liveWavePackets.collectAsState()
+    val particlePackets by viewModel.liveParticlePackets.collectAsState()
     val currentEvent by viewModel.currentEvent.collectAsState()
     val activeCalHits by viewModel.activeCalorimeterHits.collectAsState()
     val camera = viewModel.camera
@@ -115,9 +134,9 @@ fun Collider3DCanvas(
         }
     }
 
-    // Selected particle for Name Bubble Inspection
-    var selectedParticleId by remember { mutableStateOf<String?>(null) }
-    var selectedParticleScreenPos by remember { mutableStateOf<Offset?>(null) }
+    // Selected entity (Particle, Wave Packet, or Particle Packet) for Inspection Bubble
+    var selectedEntity by remember { mutableStateOf<InspectedEntity?>(null) }
+    var selectedEntityScreenPos by remember { mutableStateOf<Offset?>(null) }
 
     // Selected category filter in environment HUD (null = all visible)
     var selectedCategoryFilter by remember { mutableStateOf<ParticleCategory?>(null) }
@@ -125,8 +144,10 @@ fun Collider3DCanvas(
     // Reusable buffers (Zero heap allocation during 60FPS draw)
     val projBuffer1 = remember { FloatArray(3) }
     val projBuffer2 = remember { FloatArray(3) }
+    val projBuffer3 = remember { FloatArray(3) }
     val reusablePath = remember { Path() }
     val dashedEffect = remember { PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f) }
+    val fineDashedEffect = remember { PathEffect.dashPathEffect(floatArrayOf(6f, 5f), 0f) }
 
     // Detector Wireframe geometry cache
     val wireframeLines = remember(
@@ -199,13 +220,14 @@ fun Collider3DCanvas(
                     } while (event.changes.any { it.pressed })
 
                     if (!isDrag) {
-                        // User performed a clean TAP! Check if tapped on a particle
+                        // User performed a clean TAP! Check if tapped on a particle, wave packet, or particle packet
                         val matrix = camera.buildTransformMatrix(canvasWidth, canvasHeight)
                         val isIso = camera.isIsometricOr2D
-                        var closestParticle: Particle3D? = null
+                        var closestEntity: InspectedEntity? = null
                         var minDistance = Float.MAX_VALUE
-                        val tapThreshold = 55f // generous touch radius in pixels
+                        val tapThreshold = 65f // touch radius in pixels
 
+                        // Check Particles
                         for (p in particles) {
                             if (matrix.projectToScreenFast(
                                     p.position.x, p.position.y, p.position.z,
@@ -219,16 +241,54 @@ fun Collider3DCanvas(
                                 val dist = sqrt(dx * dx + dy * dy)
                                 if (dist < tapThreshold && dist < minDistance) {
                                     minDistance = dist
-                                    closestParticle = p
+                                    closestEntity = InspectedEntity.Particle(p)
                                 }
                             }
                         }
 
-                        if (closestParticle != null) {
-                            selectedParticleId = closestParticle.id
-                        } else {
-                            selectedParticleId = null
+                        // Check Wave Packets (if enabled)
+                        if (simState.enableWavePacketEjection) {
+                            for (wp in wavePackets) {
+                                if (matrix.projectToScreenFast(
+                                        wp.center.x, wp.center.y, wp.center.z,
+                                        canvasWidth, canvasHeight, projBuffer1,
+                                        camera.panX, camera.panY,
+                                        isIsometric = isIso
+                                    )
+                                ) {
+                                    val dx = projBuffer1[0] - initialDownPos.x
+                                    val dy = projBuffer1[1] - initialDownPos.y
+                                    val dist = sqrt(dx * dx + dy * dy)
+                                    if (dist < tapThreshold + 15f && dist < minDistance) {
+                                        minDistance = dist
+                                        closestEntity = InspectedEntity.WavePacket(wp)
+                                    }
+                                }
+                            }
                         }
+
+                        // Check Particle Packets (if enabled)
+                        if (simState.enableParticlePacketEjection) {
+                            for (pp in particlePackets) {
+                                if (matrix.projectToScreenFast(
+                                        pp.centroid.x, pp.centroid.y, pp.centroid.z,
+                                        canvasWidth, canvasHeight, projBuffer1,
+                                        camera.panX, camera.panY,
+                                        isIsometric = isIso
+                                    )
+                                ) {
+                                    val dx = projBuffer1[0] - initialDownPos.x
+                                    val dy = projBuffer1[1] - initialDownPos.y
+                                    val dist = sqrt(dx * dx + dy * dy)
+                                    if (dist < tapThreshold + 20f && dist < minDistance) {
+                                        minDistance = dist
+                                        closestEntity = InspectedEntity.ParticlePacket(pp)
+                                    }
+                                }
+                            }
+                        }
+
+                        selectedEntity = closestEntity
                     }
                 }
             }
@@ -248,33 +308,34 @@ fun Collider3DCanvas(
 
             // 1. Draw Detector Wireframe Mesh
             if (simState.wireframeEnabled) {
-                for (line in wireframeLines) {
-                    val ok1 = matrix.projectToScreenFast(
-                        line.start.x, line.start.y, line.start.z,
+                for (segment in wireframeLines) {
+                    val p0 = segment.start
+                    val p1 = segment.end
+                    val ok0 = matrix.projectToScreenFast(
+                        p0.x, p0.y, p0.z,
                         canvasWidth, canvasHeight, projBuffer1,
                         camera.panX, camera.panY,
                         isIsometric = isIso
                     )
-                    val ok2 = matrix.projectToScreenFast(
-                        line.end.x, line.end.y, line.end.z,
+                    val ok1 = matrix.projectToScreenFast(
+                        p1.x, p1.y, p1.z,
                         canvasWidth, canvasHeight, projBuffer2,
                         camera.panX, camera.panY,
                         isIsometric = isIso
                     )
 
-                    if (ok1 && ok2) {
+                    if (ok0 && ok1) {
                         drawLine(
-                            color = line.color.copy(alpha = line.alpha * 0.75f),
+                            color = segment.color,
                             start = Offset(projBuffer1[0], projBuffer1[1]),
                             end = Offset(projBuffer2[0], projBuffer2[1]),
-                            strokeWidth = (line.strokeWidth * projBuffer1[2]).coerceIn(1.0f, 2.5f),
-                            cap = StrokeCap.Round
+                            strokeWidth = segment.strokeWidth
                         )
                     }
                 }
             }
 
-            // 2. Draw Dynamic Calorimeter Energy Hit Cell Towers
+            // 2. Draw Dynamic Calorimeter Hits (Only appears as particles arrive at detector cylinders)
             for (hit in activeCalHits) {
                 if (matrix.projectToScreenFast(
                         hit.position.x, hit.position.y, hit.position.z,
@@ -286,16 +347,15 @@ fun Collider3DCanvas(
                     val hx = projBuffer1[0]
                     val hy = projBuffer1[1]
                     val hScale = projBuffer1[2]
-                    val towerRadius = (hit.energyGeV.toFloat() * 0.22f * hScale).coerceIn(6f, 22f)
+                    val towerRadius = (4.0f + (hit.energyGeV.toFloat() * 0.35f).coerceIn(2f, 18f)) * hScale
 
-                    // Clean solid cell deposit marker
                     drawCircle(
                         color = hit.color.copy(alpha = 0.85f),
                         center = Offset(hx, hy),
                         radius = towerRadius
                     )
                     drawCircle(
-                        color = Color.White,
+                        color = Color.White.copy(alpha = 0.90f),
                         center = Offset(hx, hy),
                         radius = towerRadius * 0.4f,
                         style = Stroke(width = 1.5f)
@@ -333,182 +393,412 @@ fun Collider3DCanvas(
                 }
             }
 
-            // 4. Draw Collision Vertex (0,0,0) Origin Mark (Crisp crosshair star, NO blurry glow)
-            if (matrix.projectToScreenFast(
-                    0f, 0f, 0f,
-                    canvasWidth, canvasHeight, projBuffer1,
-                    camera.panX, camera.panY,
-                    isIsometric = isIso
-                )
-            ) {
-                val ox = projBuffer1[0]
-                val oy = projBuffer1[1]
+            // 4. Draw Collision Vertex (0,0,0) Origin Mark (Crisp crosshair star)
+            val vertexOk = matrix.projectToScreenFast(
+                0f, 0f, 0f,
+                canvasWidth, canvasHeight, projBuffer1,
+                camera.panX, camera.panY,
+                isIsometric = isIso
+            )
+            var vertexScreenX = 0f
+            var vertexScreenY = 0f
+            if (vertexOk) {
+                vertexScreenX = projBuffer1[0]
+                vertexScreenY = projBuffer1[1]
                 val starSize = 10f * projBuffer1[2].coerceIn(0.8f, 2.5f)
 
                 // Clean vertex crosshair
                 drawLine(
                     color = Color.White,
-                    start = Offset(ox - starSize, oy),
-                    end = Offset(ox + starSize, oy),
+                    start = Offset(vertexScreenX - starSize, vertexScreenY),
+                    end = Offset(vertexScreenX + starSize, vertexScreenY),
                     strokeWidth = 2f
                 )
                 drawLine(
                     color = Color.White,
-                    start = Offset(ox, oy - starSize),
-                    end = Offset(ox, oy + starSize),
+                    start = Offset(vertexScreenX, vertexScreenY - starSize),
+                    end = Offset(vertexScreenX, vertexScreenY + starSize),
                     strokeWidth = 2f
                 )
                 drawCircle(
                     color = Color(0xFF00E5FF),
-                    center = Offset(ox, oy),
+                    center = Offset(vertexScreenX, vertexScreenY),
                     radius = 3.5f * projBuffer1[2]
                 )
             }
 
-            // 5. Draw Particle Trajectories and Crisp Realistically Sized Particle Heads (NO GLOW)
             var currentSelectedScreenPos: Offset? = null
 
-            for (p in particles) {
-                val isSelected = (p.id == selectedParticleId)
-                val matchesFilter = selectedCategoryFilter == null || p.species.category == selectedCategoryFilter
+            // 5. DRAW COLLIMATED PARTICLE PACKETS / BUNCHES EJECTED AFTER COLLISION
+            val showParticlePackets = simState.enableParticlePacketEjection &&
+                    simState.packetDualityMode != PacketDualityMode.WAVE_PACKETS_ONLY &&
+                    simState.packetDualityMode != PacketDualityMode.CLASSICAL_TRACKS
 
-                // Determine crisp track color from classification system
-                val pColor = when (simState.trailColorMode) {
-                    TrailColorMode.SPECIES_COLOR -> p.colorOverride ?: p.species.color
-                    TrailColorMode.ENERGY_HEATMAP -> {
-                        val pT = p.transverseMomentum()
-                        when {
-                            pT > 60f -> Color(0xFFFF1744)  // High pT = Crimson Red
-                            pT > 20f -> Color(0xFFFFD600)  // Medium pT = Gold Yellow
-                            pT > 5f -> Color(0xFF00E5FF)   // Moderate pT = Cyan
-                            else -> Color(0xFF7C4DFF)      // Low pT = Violet
-                        }
-                    }
-                    TrailColorMode.CHARGE_COLOR -> {
-                        when {
-                            p.charge > 0.05 -> Color(0xFFFF5252)   // Positive = Red
-                            p.charge < -0.05 -> Color(0xFF40C4FF)  // Negative = Cyan/Blue
-                            else -> Color(0xFFFFD600)             // Neutral = Yellow
-                        }
-                    }
-                }
+            if (showParticlePackets) {
+                for (pp in particlePackets) {
+                    val isSelected = selectedEntity is InspectedEntity.ParticlePacket &&
+                            (selectedEntity as InspectedEntity.ParticlePacket).pp.id == pp.id
 
-                val history = p.trajectoryHistory
-
-                // Draw clean crisp trajectory line (Single crisp pass, NO blurry outer glow)
-                if (history.size > 1) {
-                    reusablePath.reset()
-                    var firstPoint = true
-
-                    for (pt in history) {
-                        if (matrix.projectToScreenFast(
-                                pt.x, pt.y, pt.z,
-                                canvasWidth, canvasHeight, projBuffer1,
-                                camera.panX, camera.panY,
-                                isIsometric = isIso
-                            )
-                        ) {
-                            if (firstPoint) {
-                                reusablePath.moveTo(projBuffer1[0], projBuffer1[1])
-                                firstPoint = false
-                            } else {
-                                reusablePath.lineTo(projBuffer1[0], projBuffer1[1])
-                            }
-                        }
-                    }
-
-                    if (!firstPoint) {
-                        val baseWidth = if (isSelected) 4.5f else 2.5f
-                        val strokeWidth = (baseWidth * simState.trailWidth).coerceIn(1.5f, 10f)
-                        val trackAlpha = if (matchesFilter) {
-                            if (isSelected) 1.0f else simState.trailAlpha
-                        } else {
-                            0.15f // Dim non-matching categories
-                        }
-
-                        drawPath(
-                            path = reusablePath,
-                            color = pColor.copy(alpha = trackAlpha),
-                            style = Stroke(
-                                width = strokeWidth,
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round
-                            )
-                        )
-                    }
-                }
-
-                // Draw Clean Particle Head Sphere with Mathematically Correct Physical Size
-                // REMOVE STATIC PARTICLES: newly detonated particles at r < 0.22m are not drawn as static dots at vertex
-                val distFromVertex = p.position.magnitude()
-                val isAtVertexInstant = p.generation != 0 && distFromVertex < 0.22f
-
-                if ((!isAtVertexInstant || isSelected) && matrix.projectToScreenFast(
-                        p.position.x, p.position.y, p.position.z,
+                    val okCentroid = matrix.projectToScreenFast(
+                        pp.centroid.x, pp.centroid.y, pp.centroid.z,
                         canvasWidth, canvasHeight, projBuffer1,
                         camera.panX, camera.panY,
                         isIsometric = isIso
                     )
-                ) {
-                    val hx = projBuffer1[0]
-                    val hy = projBuffer1[1]
-                    val hScale = projBuffer1[2]
 
-                    // Realistic particle size based on subatomic physics classification:
-                    // Leptons (point-like) = 0.68x, Mesons = 1.05x, Baryons = 1.45x, Nuclei = 2.1-3.2x
-                    val baseRadius = if (isSelected) 8.5f else 5.5f
-                    val sizeMultiplier = p.species.renderRadiusMultiplier
-                    val radius = (baseRadius * sizeMultiplier * hScale).coerceIn(3.0f, 26f)
+                    if (okCentroid) {
+                        val cx = projBuffer1[0]
+                        val cy = projBuffer1[1]
+                        val cScale = projBuffer1[2]
+                        val bunchPixelRadius = (pp.bunchRadius * 28.0f * cScale).coerceIn(16f, 110f)
 
-                    val headAlpha = if (matchesFilter) 1.0f else 0.20f
+                        if (isSelected) {
+                            currentSelectedScreenPos = Offset(cx, cy)
+                            // White targeting reticle
+                            drawCircle(
+                                color = Color.White,
+                                center = Offset(cx, cy),
+                                radius = bunchPixelRadius + 10f,
+                                style = Stroke(width = 2.0f, pathEffect = dashedEffect)
+                            )
+                        }
 
-                    // Track selected particle screen position for Name Bubble
-                    if (isSelected) {
-                        currentSelectedScreenPos = Offset(hx, hy)
+                        // Draw Jet Cone from Vertex (0,0,0) to bunch perimeter if vertex is visible
+                        if (vertexOk) {
+                            val dirScreen = Offset(cx - vertexScreenX, cy - vertexScreenY)
+                            val distScreen = dirScreen.getDistance()
+                            if (distScreen > 10f) {
+                                val normScreen = Offset(-dirScreen.y / distScreen, dirScreen.x / distScreen)
+                                val edge1 = Offset(cx + normScreen.x * bunchPixelRadius, cy + normScreen.y * bunchPixelRadius)
+                                val edge2 = Offset(cx - normScreen.x * bunchPixelRadius, cy - normScreen.y * bunchPixelRadius)
 
-                        // Draw clean selection targeting reticle
+                                drawLine(
+                                    color = pp.color.copy(alpha = if (isSelected) 0.55f else 0.28f),
+                                    start = Offset(vertexScreenX, vertexScreenY),
+                                    end = edge1,
+                                    strokeWidth = 1.5f,
+                                    pathEffect = fineDashedEffect
+                                )
+                                drawLine(
+                                    color = pp.color.copy(alpha = if (isSelected) 0.55f else 0.28f),
+                                    start = Offset(vertexScreenX, vertexScreenY),
+                                    end = edge2,
+                                    strokeWidth = 1.5f,
+                                    pathEffect = fineDashedEffect
+                                )
+                            }
+                        }
+
+                        // Draw Transverse Bunch Cluster Boundary Ring
                         drawCircle(
-                            color = Color.White,
-                            center = Offset(hx, hy),
-                            radius = radius + 8f,
-                            style = Stroke(width = 2.0f, pathEffect = dashedEffect)
+                            color = pp.color.copy(alpha = if (isSelected) 0.85f else 0.50f),
+                            center = Offset(cx, cy),
+                            radius = bunchPixelRadius,
+                            style = Stroke(width = if (isSelected) 2.5f else 1.8f, pathEffect = dashedEffect)
                         )
-                    }
 
-                    // Solid clean particle head
-                    drawCircle(
-                        color = pColor.copy(alpha = headAlpha),
-                        center = Offset(hx, hy),
-                        radius = radius
-                    )
-                    // Sharp specular highlight dot
-                    if (headAlpha > 0.5f) {
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.9f),
-                            center = Offset(hx - radius * 0.3f, hy - radius * 0.3f),
-                            radius = radius * 0.35f
+                        // Draw Packet Centroid Marker (Diamond)
+                        val diamondSize = 6.0f * cScale
+                        val diamondPath = reusablePath
+                        diamondPath.reset()
+                        diamondPath.moveTo(cx, cy - diamondSize)
+                        diamondPath.lineTo(cx + diamondSize, cy)
+                        diamondPath.lineTo(cx, cy + diamondSize)
+                        diamondPath.lineTo(cx - diamondSize, cy)
+                        diamondPath.close()
+
+                        drawPath(
+                            path = diamondPath,
+                            color = pp.color.copy(alpha = 0.95f)
+                        )
+                        drawPath(
+                            path = diamondPath,
+                            color = Color.White,
+                            style = Stroke(width = 1.2f)
                         )
                     }
                 }
             }
 
-            selectedParticleScreenPos = currentSelectedScreenPos
+            // 6. DRAW QUANTUM WAVE PACKETS EJECTED AFTER COLLISION
+            val showWavePackets = simState.enableWavePacketEjection &&
+                    simState.packetDualityMode != PacketDualityMode.PARTICLE_PACKETS_ONLY &&
+                    simState.packetDualityMode != PacketDualityMode.CLASSICAL_TRACKS
+
+            if (showWavePackets) {
+                for (wp in wavePackets) {
+                    val isSelected = selectedEntity is InspectedEntity.WavePacket &&
+                            (selectedEntity as InspectedEntity.WavePacket).wp.id == wp.id
+
+                    if (wp.isSphericalCoherentWave) {
+                        // Draw expanding spherical coherent vacuum wave from vertex
+                        if (vertexOk) {
+                            val baseRadius = (wp.center.magnitude() + wp.envelopeWidth * 1.8f) * 35.0f * projBuffer1[2]
+                            val waveAlpha = (0.55f * wp.amplitude).coerceIn(0.12f, 0.75f)
+
+                            for (i in 0..2) {
+                                val rippleOffset = ((wp.phase + i * 2.0f) % 6.0f) * 6.0f
+                                val ringR = (baseRadius + rippleOffset).coerceIn(5f, 250f)
+                                drawCircle(
+                                    color = wp.color.copy(alpha = waveAlpha * (1f - (i * 0.25f))),
+                                    center = Offset(vertexScreenX, vertexScreenY),
+                                    radius = ringR,
+                                    style = Stroke(width = 1.5f, pathEffect = dashedEffect)
+                                )
+                            }
+                        }
+                    } else {
+                        // Directional De Broglie Wave Packet
+                        val okCenter = matrix.projectToScreenFast(
+                            wp.center.x, wp.center.y, wp.center.z,
+                            canvasWidth, canvasHeight, projBuffer1,
+                            camera.panX, camera.panY,
+                            isIsometric = isIso
+                        )
+
+                        // Project forward along momentum vector
+                        val forwardDir = if (wp.momentum.magnitude() > 0.01f) wp.momentum.normalized() else Vector3D(0f, 1f, 0f)
+                        val forwardPoint = wp.center + (forwardDir * 0.8f)
+                        val okForward = matrix.projectToScreenFast(
+                            forwardPoint.x, forwardPoint.y, forwardPoint.z,
+                            canvasWidth, canvasHeight, projBuffer2,
+                            camera.panX, camera.panY,
+                            isIsometric = isIso
+                        )
+
+                        if (okCenter && okForward) {
+                            val wx = projBuffer1[0]
+                            val wy = projBuffer1[1]
+                            val wScale = projBuffer1[2]
+
+                            if (isSelected) {
+                                currentSelectedScreenPos = Offset(wx, wy)
+                            }
+
+                            val dirX = projBuffer2[0] - wx
+                            val dirY = projBuffer2[1] - wy
+                            val dirLen = sqrt(dirX * dirX + dirY * dirY).coerceAtLeast(1.0f)
+                            val uDirX = dirX / dirLen
+                            val uDirY = dirY / dirLen
+                            // Perpendicular unit vector on screen
+                            val perpX = -uDirY
+                            val perpY = uDirX
+
+                            val packetPixelWidth = (wp.envelopeWidth * 32.0f * wScale).coerceIn(14f, 80f)
+                            val packetPixelTransverse = packetPixelWidth * 0.65f
+                            val waveAlpha = (0.75f * wp.amplitude).coerceIn(0.18f, 0.95f)
+
+                            // Draw Oscillating Wavefront Crests / Phase Ripples (sinusoidal crest lines)
+                            val wavelengthPx = (wp.deBroglieWavelengthMeters * 24.0f * wScale).coerceIn(10f, 45f)
+                            val crestCount = 4
+
+                            for (c in -2..2) {
+                                // Phase shift moves crests continuously outward through the Gaussian envelope
+                                val phaseOffset = ((wp.phase / (2f * PI.toFloat())) * wavelengthPx)
+                                val crestDist = (c * wavelengthPx + phaseOffset)
+                                val crestCenter = Offset(wx + uDirX * crestDist, wy + uDirY * crestDist)
+
+                                // Gaussian amplitude modulation factor: exp(-d^2 / 2σ^2)
+                                val normDist = (crestDist / packetPixelWidth).toDouble()
+                                val gaussWeight = kotlin.math.exp(-(normDist * normDist) * 1.5).toFloat().coerceIn(0.15f, 1.0f)
+                                val crestHalfWidth = packetPixelTransverse * gaussWeight
+
+                                val pLeft = Offset(crestCenter.x + perpX * crestHalfWidth, crestCenter.y + perpY * crestHalfWidth)
+                                val pRight = Offset(crestCenter.x - perpX * crestHalfWidth, crestCenter.y - perpY * crestHalfWidth)
+
+                                // Wavefront arc with slight curve
+                                val arcMid = Offset(crestCenter.x + uDirX * (crestHalfWidth * 0.25f), crestCenter.y + uDirY * (crestHalfWidth * 0.25f))
+                                reusablePath.reset()
+                                reusablePath.moveTo(pLeft.x, pLeft.y)
+                                reusablePath.quadraticTo(arcMid.x, arcMid.y, pRight.x, pRight.y)
+
+                                drawPath(
+                                    path = reusablePath,
+                                    color = wp.color.copy(alpha = (waveAlpha * gaussWeight).coerceIn(0.01f, 1.0f)),
+                                    style = Stroke(
+                                        width = ((if (isSelected) 2.5f else 1.8f) * gaussWeight).coerceIn(1.0f, 6.0f),
+                                        cap = StrokeCap.Round
+                                    )
+                                )
+                            }
+
+                            // Draw Gaussian Wavepacket Boundary Ellipse (dashed envelope)
+                            drawCircle(
+                                color = wp.color.copy(alpha = if (isSelected) 0.85f else 0.35f * waveAlpha),
+                                center = Offset(wx, wy),
+                                radius = packetPixelWidth,
+                                style = Stroke(width = if (isSelected) 2.2f else 1.2f, pathEffect = fineDashedEffect)
+                            )
+
+                            // Quantum Core Point
+                            drawCircle(
+                                color = Color.White.copy(alpha = 0.95f),
+                                center = Offset(wx, wy),
+                                radius = 3.5f * wScale
+                            )
+                            drawCircle(
+                                color = wp.color.copy(alpha = 0.90f),
+                                center = Offset(wx, wy),
+                                radius = 2.0f * wScale
+                            )
+
+                            if (isSelected) {
+                                drawCircle(
+                                    color = Color.White,
+                                    center = Offset(wx, wy),
+                                    radius = packetPixelWidth + 8f,
+                                    style = Stroke(width = 2.0f, pathEffect = dashedEffect)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 7. DRAW PARTICLES AND CRISP REALISTICALLY SIZED PARTICLES (NO BLURRY GLOW)
+            val showParticles = simState.packetDualityMode != PacketDualityMode.WAVE_PACKETS_ONLY
+
+            if (showParticles) {
+                for (p in particles) {
+                    val isSelected = selectedEntity is InspectedEntity.Particle &&
+                            (selectedEntity as InspectedEntity.Particle).p.id == p.id
+                    val matchesFilter = selectedCategoryFilter == null || p.species.category == selectedCategoryFilter
+
+                    // Determine crisp track color from classification system
+                    val pColor = when (simState.trailColorMode) {
+                        TrailColorMode.SPECIES_COLOR -> p.colorOverride ?: p.species.color
+                        TrailColorMode.ENERGY_HEATMAP -> {
+                            val pT = p.transverseMomentum()
+                            when {
+                                pT > 60f -> Color(0xFFFF1744)  // High pT = Crimson Red
+                                pT > 20f -> Color(0xFFFFD600)  // Medium pT = Gold Yellow
+                                pT > 5f -> Color(0xFF00E5FF)   // Moderate pT = Cyan
+                                else -> Color(0xFF7C4DFF)      // Low pT = Violet
+                            }
+                        }
+                        TrailColorMode.CHARGE_COLOR -> {
+                            when {
+                                p.charge > 0.05 -> Color(0xFFFF5252)   // Positive = Red
+                                p.charge < -0.05 -> Color(0xFF40C4FF)  // Negative = Cyan/Blue
+                                else -> Color(0xFFFFD600)             // Neutral = Yellow
+                            }
+                        }
+                    }
+
+                    val history = p.trajectoryHistory
+
+                    // Draw clean crisp trajectory line (Single crisp pass, NO blurry outer glow)
+                    if (history.size > 1) {
+                        reusablePath.reset()
+                        var firstPoint = true
+
+                        for (pt in history) {
+                            if (matrix.projectToScreenFast(
+                                    pt.x, pt.y, pt.z,
+                                    canvasWidth, canvasHeight, projBuffer1,
+                                    camera.panX, camera.panY,
+                                    isIsometric = isIso
+                                )
+                            ) {
+                                if (firstPoint) {
+                                    reusablePath.moveTo(projBuffer1[0], projBuffer1[1])
+                                    firstPoint = false
+                                } else {
+                                    reusablePath.lineTo(projBuffer1[0], projBuffer1[1])
+                                }
+                            }
+                        }
+
+                        if (!firstPoint) {
+                            val baseWidth = if (isSelected) 4.5f else 2.5f
+                            val strokeWidth = (baseWidth * simState.trailWidth).coerceIn(1.5f, 10f)
+                            val trackAlpha = if (matchesFilter) {
+                                if (isSelected) 1.0f else simState.trailAlpha
+                            } else {
+                                0.15f // Dim non-matching categories
+                            }
+
+                            drawPath(
+                                path = reusablePath,
+                                color = pColor.copy(alpha = trackAlpha),
+                                style = Stroke(
+                                    width = strokeWidth,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
+                            )
+                        }
+                    }
+
+                    // Draw Clean Particle Head Sphere with Mathematically Correct Physical Size
+                    val distFromVertex = p.position.magnitude()
+                    val isAtVertexInstant = p.generation != 0 && distFromVertex < 0.22f
+
+                    if ((!isAtVertexInstant || isSelected) && matrix.projectToScreenFast(
+                            p.position.x, p.position.y, p.position.z,
+                            canvasWidth, canvasHeight, projBuffer1,
+                            camera.panX, camera.panY,
+                            isIsometric = isIso
+                        )
+                    ) {
+                        val hx = projBuffer1[0]
+                        val hy = projBuffer1[1]
+                        val hScale = projBuffer1[2]
+
+                        // Realistic particle size based on subatomic physics classification:
+                        val baseRadius = if (isSelected) 8.5f else 5.5f
+                        val sizeMultiplier = p.species.renderRadiusMultiplier
+                        val radius = (baseRadius * sizeMultiplier * hScale).coerceIn(3.0f, 26f)
+
+                        val headAlpha = if (matchesFilter) 1.0f else 0.20f
+
+                        // Track selected particle screen position for Name Bubble
+                        if (isSelected) {
+                            currentSelectedScreenPos = Offset(hx, hy)
+
+                            // Draw clean selection targeting reticle
+                            drawCircle(
+                                color = Color.White,
+                                center = Offset(hx, hy),
+                                radius = radius + 8f,
+                                style = Stroke(width = 2.0f, pathEffect = dashedEffect)
+                            )
+                        }
+
+                        // Solid clean particle head
+                        drawCircle(
+                            color = pColor.copy(alpha = headAlpha),
+                            center = Offset(hx, hy),
+                            radius = radius
+                        )
+                        // Sharp specular highlight dot
+                        if (headAlpha > 0.5f) {
+                            drawCircle(
+                                color = Color.White.copy(alpha = 0.9f),
+                                center = Offset(hx - radius * 0.3f, hy - radius * 0.3f),
+                                radius = radius * 0.35f
+                            )
+                        }
+                    }
+                }
+            }
+
+            selectedEntityScreenPos = currentSelectedScreenPos
         }
 
-        // Particle Name Bubble (Interactive Inspector on Tap)
-        val inspectedParticle = particles.find { it.id == selectedParticleId }
-        val bubblePos = selectedParticleScreenPos
-
-        if (inspectedParticle != null && bubblePos != null) {
-            ParticleNameBubble(
-                particle = inspectedParticle,
-                magneticFieldTesla = simState.magneticFieldTesla,
-                screenPos = bubblePos,
-                canvasWidth = canvasWidth,
-                canvasHeight = canvasHeight,
-                isDark = isDark,
-                onDismiss = { selectedParticleId = null }
-            )
+        // Unified Name Bubble Inspector on Tap (Handles Particle, Wave Packet, or Particle Packet)
+        selectedEntity?.let { entity ->
+            selectedEntityScreenPos?.let { bubblePos ->
+                UnifiedInspectorBubble(
+                    entity = entity,
+                    magneticFieldTesla = simState.magneticFieldTesla,
+                    screenPos = bubblePos,
+                    canvasWidth = canvasWidth,
+                    canvasHeight = canvasHeight,
+                    isDark = isDark,
+                    onDismiss = { selectedEntity = null }
+                )
+            }
         }
 
         // Overlay Top Bar & Environmental Color Classification Legend
@@ -553,6 +843,51 @@ fun Collider3DCanvas(
                                 imageVector = Icons.Default.GridOn,
                                 contentDescription = "Toggle Wireframe",
                                 tint = if (simState.wireframeEnabled) Color(0xFF00E5FF) else Color.Gray
+                            )
+                        }
+
+                        // Wave Packet Ejection Toggle Button
+                        IconButton(
+                            onClick = { viewModel.setEnableWavePacketEjection(!simState.enableWavePacketEjection) },
+                            modifier = Modifier.testTag("toggle_wave_packets_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Waves,
+                                contentDescription = "Toggle Wave Packets",
+                                tint = if (simState.enableWavePacketEjection) Color(0xFF00E5FF) else Color.Gray
+                            )
+                        }
+
+                        // Particle Packet Ejection Toggle Button
+                        IconButton(
+                            onClick = { viewModel.setEnableParticlePacketEjection(!simState.enableParticlePacketEjection) },
+                            modifier = Modifier.testTag("toggle_particle_packets_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Grain,
+                                contentDescription = "Toggle Particle Packets",
+                                tint = if (simState.enableParticlePacketEjection) Color(0xFFFF9100) else Color.Gray
+                            )
+                        }
+
+                        // Cycle Packet Duality Mode
+                        IconButton(
+                            onClick = {
+                                val nextMode = when (simState.packetDualityMode) {
+                                    PacketDualityMode.DUAL_WAVE_PARTICLE -> PacketDualityMode.WAVE_PACKETS_ONLY
+                                    PacketDualityMode.WAVE_PACKETS_ONLY -> PacketDualityMode.PARTICLE_PACKETS_ONLY
+                                    PacketDualityMode.PARTICLE_PACKETS_ONLY -> PacketDualityMode.CLASSICAL_TRACKS
+                                    PacketDualityMode.CLASSICAL_TRACKS -> PacketDualityMode.DUAL_WAVE_PARTICLE
+                                    else -> PacketDualityMode.DUAL_WAVE_PARTICLE
+                                }
+                                viewModel.setPacketDualityMode(nextMode)
+                            },
+                            modifier = Modifier.testTag("cycle_duality_mode_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AllInclusive,
+                                contentDescription = "Cycle Duality Mode",
+                                tint = Color(0xFFE040FB)
                             )
                         }
 
@@ -603,13 +938,13 @@ fun Collider3DCanvas(
 
                         Spacer(modifier = Modifier.width(6.dp))
 
-                        // Projection & Zoom Readout
+                        // Projection, Zoom & Duality Mode Readout
                         Text(
-                            text = "[${simState.projectionMode.shortName}] %.1fx".format(camera.zoom),
+                            text = "[${simState.projectionMode.shortName}] %.1fx • ${simState.packetDualityMode.shortName}".format(camera.zoom),
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = if (isDark) Color(0xFF80DEEA) else Color(0xFF0277BD)
                             ),
                             modifier = Modifier.padding(end = 8.dp)
@@ -650,7 +985,7 @@ fun Collider3DCanvas(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Color Classification HUD in Environment (Tap to Filter Species)
+            // Species & Ejected Packet HUD in Environment (Tap to Filter Species)
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = if (isDark) Color(0xFF0B132B).copy(alpha = 0.88f) else Color.White.copy(alpha = 0.90f),
@@ -663,6 +998,45 @@ fun Collider3DCanvas(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    // Packet Count Badges
+                    if (wavePackets.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF00E5FF).copy(alpha = 0.20f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF))
+                        ) {
+                            Text(
+                                text = "ψ WAVES: ${wavePackets.size}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.sp,
+                                    color = Color(0xFF00E5FF)
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    if (particlePackets.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFF9100).copy(alpha = 0.20f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF9100))
+                        ) {
+                            Text(
+                                text = ":: PACKETS: ${particlePackets.size}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.sp,
+                                    color = Color(0xFFFF9100)
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
                     Text(
                         text = "SPECIES:",
                         style = MaterialTheme.typography.labelSmall.copy(
@@ -748,7 +1122,7 @@ fun Collider3DCanvas(
 
                 Column {
                     Text(
-                        text = "TIME: %.4f c | MODE: ${simState.projectionMode.displayName}".format(simState.timeScale),
+                        text = "TIME: %.4f c | ${simState.packetDualityMode.shortName}".format(simState.timeScale),
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
@@ -757,10 +1131,10 @@ fun Collider3DCanvas(
                         )
                     )
                     Text(
-                        text = "ACTIVE TRACKS: ${particles.size} (Tap particle to inspect)",
+                        text = "TRACKS: ${particles.size} | ψ WAVES: ${wavePackets.size} | PACKETS: ${particlePackets.size}",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 9.5.sp,
+                            fontSize = 9.sp,
                             color = if (isDark) Color.LightGray else Color.DarkGray
                         )
                     )
@@ -814,6 +1188,54 @@ fun ClassificationFilterChip(
 }
 
 /**
+ * Unified Inspector Bubble: Dispatches to Particle, Wave Packet, or Particle Packet Inspection Card
+ */
+@Composable
+fun UnifiedInspectorBubble(
+    entity: InspectedEntity,
+    magneticFieldTesla: Float,
+    screenPos: Offset,
+    canvasWidth: Float,
+    canvasHeight: Float,
+    isDark: Boolean,
+    onDismiss: () -> Unit
+) {
+    when (entity) {
+        is InspectedEntity.Particle -> {
+            ParticleNameBubble(
+                particle = entity.p,
+                magneticFieldTesla = magneticFieldTesla,
+                screenPos = screenPos,
+                canvasWidth = canvasWidth,
+                canvasHeight = canvasHeight,
+                isDark = isDark,
+                onDismiss = onDismiss
+            )
+        }
+        is InspectedEntity.WavePacket -> {
+            WavePacketNameBubble(
+                wavePacket = entity.wp,
+                screenPos = screenPos,
+                canvasWidth = canvasWidth,
+                canvasHeight = canvasHeight,
+                isDark = isDark,
+                onDismiss = onDismiss
+            )
+        }
+        is InspectedEntity.ParticlePacket -> {
+            ParticlePacketNameBubble(
+                packet = entity.pp,
+                screenPos = screenPos,
+                canvasWidth = canvasWidth,
+                canvasHeight = canvasHeight,
+                isDark = isDark,
+                onDismiss = onDismiss
+            )
+        }
+    }
+}
+
+/**
  * Interactive Particle Name Bubble displayed after tapping any particle track in 3D
  */
 @Composable
@@ -831,7 +1253,6 @@ fun ParticleNameBubble(
     val pMag = particle.momentum.magnitude()
     val energy = particle.totalEnergyGeV()
 
-    // Curvature radius in solenoidal B-field: R = p_T / (|q| * B)
     val curvatureMeters = if (abs(particle.charge) > 0.01 && magneticFieldTesla > 0.05f) {
         (pt / (abs(particle.charge).toFloat() * magneticFieldTesla * 0.3f))
     } else {
@@ -839,9 +1260,8 @@ fun ParticleNameBubble(
     }
 
     val bubbleWidth = 240f
-    val bubbleHeight = 180f
+    val bubbleHeight = 185f
 
-    // Clamp bubble to stay within screen boundaries
     val clampX = (screenPos.x - bubbleWidth / 2f).coerceIn(16f, (canvasWidth - bubbleWidth - 16f).coerceAtLeast(16f))
     val clampY = if (screenPos.y > bubbleHeight + 40f) {
         screenPos.y - bubbleHeight - 20f
@@ -884,7 +1304,7 @@ fun ParticleNameBubble(
                             style = MaterialTheme.typography.titleSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = particle.species.color,
-                                fontSize = 12.5.sp
+                                fontSize = 12.sp
                             )
                         )
                     }
@@ -917,7 +1337,6 @@ fun ParticleNameBubble(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Physical properties readout
                 BubbleDetailRow("Electric Charge:", "%+.1f e".format(particle.charge))
                 BubbleDetailRow("Rest Mass m₀:", "%.4f GeV/c²".format(particle.species.restMassGeV))
                 BubbleDetailRow("Transverse p_T:", "%.2f GeV/c".format(pt))
@@ -929,6 +1348,202 @@ fun ParticleNameBubble(
                 if (!curvatureMeters.isInfinite()) {
                     BubbleDetailRow("Track Curvature R:", "%.1f meters".format(curvatureMeters))
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Quantum De Broglie Wave Packet Inspector Bubble
+ */
+@Composable
+fun WavePacketNameBubble(
+    wavePacket: WavePacket3D,
+    screenPos: Offset,
+    canvasWidth: Float,
+    canvasHeight: Float,
+    isDark: Boolean,
+    onDismiss: () -> Unit
+) {
+    val bubbleWidth = 245f
+    val bubbleHeight = 180f
+
+    val clampX = (screenPos.x - bubbleWidth / 2f).coerceIn(16f, (canvasWidth - bubbleWidth - 16f).coerceAtLeast(16f))
+    val clampY = if (screenPos.y > bubbleHeight + 40f) {
+        screenPos.y - bubbleHeight - 20f
+    } else {
+        screenPos.y + 25f
+    }.coerceIn(16f, (canvasHeight - bubbleHeight - 16f).coerceAtLeast(16f))
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(0.dp)
+    ) {
+        Surface(
+            modifier = Modifier
+                .offset { IntOffset(clampX.roundToInt(), clampY.roundToInt()) }
+                .widthIn(max = 260.dp)
+                .testTag("wave_packet_name_bubble"),
+            shape = RoundedCornerShape(12.dp),
+            color = if (isDark) Color(0xFF0F1A2E).copy(alpha = 0.95f) else Color.White.copy(alpha = 0.96f),
+            shadowElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, wavePacket.color)
+        ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                // Header with Wave Icon, Title, and Close Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Waves,
+                            contentDescription = "Quantum Wave Packet",
+                            tint = wavePacket.color,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = wavePacket.name,
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = wavePacket.color,
+                                fontSize = 11.5.sp
+                            )
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss Bubble",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = wavePacket.packetType,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        color = Color.Gray
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                BubbleDetailRow("de Broglie λ_dB:", "%.2f meters (Scaled)".format(wavePacket.deBroglieWavelengthMeters))
+                BubbleDetailRow("Oscillation Phase φ:", "%.2f rad (ω = %.1f)".format(wavePacket.phase, wavePacket.frequency))
+                BubbleDetailRow("Gaussian Width σ(t):", "%.2f m (Dispersing)".format(wavePacket.envelopeWidth))
+                BubbleDetailRow("Prob. Amplitude |ψ|:", "%.2f".format(wavePacket.amplitude))
+                BubbleDetailRow("Group Velocity v_g:", "%.3f c".format(wavePacket.velocity.magnitude().coerceIn(0f, 1f)))
+                BubbleDetailRow("Momentum ħk:", "%.2f GeV/c".format(wavePacket.momentum.magnitude()))
+                BubbleDetailRow("Quantum State:", if (wavePacket.isSphericalCoherentWave) "Vacuum Polarization" else "Localized Wave Packet")
+            }
+        }
+    }
+}
+
+/**
+ * Collimated Particle Packet / Bunch Inspector Bubble
+ */
+@Composable
+fun ParticlePacketNameBubble(
+    packet: ParticlePacket3D,
+    screenPos: Offset,
+    canvasWidth: Float,
+    canvasHeight: Float,
+    isDark: Boolean,
+    onDismiss: () -> Unit
+) {
+    val bubbleWidth = 250f
+    val bubbleHeight = 180f
+
+    val clampX = (screenPos.x - bubbleWidth / 2f).coerceIn(16f, (canvasWidth - bubbleWidth - 16f).coerceAtLeast(16f))
+    val clampY = if (screenPos.y > bubbleHeight + 40f) {
+        screenPos.y - bubbleHeight - 20f
+    } else {
+        screenPos.y + 25f
+    }.coerceIn(16f, (canvasHeight - bubbleHeight - 16f).coerceAtLeast(16f))
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(0.dp)
+    ) {
+        Surface(
+            modifier = Modifier
+                .offset { IntOffset(clampX.roundToInt(), clampY.roundToInt()) }
+                .widthIn(max = 265.dp)
+                .testTag("particle_packet_name_bubble"),
+            shape = RoundedCornerShape(12.dp),
+            color = if (isDark) Color(0xFF1A1528).copy(alpha = 0.95f) else Color.White.copy(alpha = 0.96f),
+            shadowElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, packet.color)
+        ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                // Header with Bunch Icon, Title, and Close Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Grain,
+                            contentDescription = "Particle Bunch Packet",
+                            tint = packet.color,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = packet.name,
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = packet.color,
+                                fontSize = 11.5.sp
+                            )
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss Bubble",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = "${packet.packetCategory} • Collimated Bunch",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        color = Color.Gray
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                BubbleDetailRow("Constituent Quanta:", "${packet.constituentIds.size} particles")
+                BubbleDetailRow("Key Hadron Species:", packet.constituentSpeciesNames.joinToString(" ").take(24))
+                BubbleDetailRow("Total Bunch Energy ∑E:", "%.2f GeV".format(packet.totalEnergyGeV))
+                BubbleDetailRow("Bunch Momentum |P|:", "%.2f GeV/c".format(packet.totalMomentum.magnitude()))
+                BubbleDetailRow("Bunch Radius R_bunch:", "%.2f meters".format(packet.bunchRadius))
+                BubbleDetailRow("Opening Cone Angle θ:", "%.1f° (%.2f rad)".format(packet.openingAngleRad * 180f / PI.toFloat(), packet.openingAngleRad))
+                BubbleDetailRow("Bunch Centroid Speed:", "%.3f c".format(packet.velocity.magnitude().coerceIn(0f, 1f)))
             }
         }
     }
