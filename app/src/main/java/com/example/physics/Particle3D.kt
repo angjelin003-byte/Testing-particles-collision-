@@ -19,6 +19,7 @@ data class Particle3D(
     val lifetimeNs: Double = Double.POSITIVE_INFINITY,
     val colorOverride: Color? = null,
     val trajectoryHistory: MutableList<Vector3D> = mutableListOf(),
+    var speedFractionOfC: Float = 0.95f,
     var ageSteps: Int = 0,
     var isDecayed: Boolean = false,
     var isEscaped: Boolean = false
@@ -65,9 +66,9 @@ data class Particle3D(
         ageSteps++
 
         if (generation == 0) {
-            // Incoming beam particles travel rapidly towards z = 0
+            // Incoming beam particles travel rapidly towards z = 0 with user-configured speed
             val pzSign = if (momentum.z >= 0f) 1f else -1f
-            val moveStep = pzSign * dtSeconds * 80.0f
+            val moveStep = pzSign * dtSeconds * 90.0f * speedFractionOfC
             position = Vector3D(position.x, position.y, position.z + moveStep)
 
             // Limit history

@@ -92,16 +92,24 @@ data class CollisionEventResult(
 object RelativisticCollisionEngine {
 
     /**
-     * Create incoming head-on beam particles traveling towards center (0,0,0)
+     * Create incoming head-on beam particles traveling towards center (0,0,0) with individual speeds
      */
     fun createIncomingBeams(
         beamA: ParticleSpecies,
         beamB: ParticleSpecies,
         energyGeV: Double,
-        impactParameterFm: Double
+        impactParameterFm: Double,
+        speedA: Float = 0.95f,
+        speedB: Float = 0.95f
     ): List<Particle3D> {
-        val pzA = sqrt((energyGeV * energyGeV - beamA.restMassGeV * beamA.restMassGeV).coerceAtLeast(0.1)).toFloat()
-        val pzB = -sqrt((energyGeV * energyGeV - beamB.restMassGeV * beamB.restMassGeV).coerceAtLeast(0.1)).toFloat()
+        val betaA = speedA.coerceIn(0.05f, 0.9999f)
+        val betaB = speedB.coerceIn(0.05f, 0.9999f)
+
+        val gammaA = (1.0 / sqrt((1.0 - betaA * betaA).coerceAtLeast(0.0001))).toFloat()
+        val gammaB = (1.0 / sqrt((1.0 - betaB * betaB).coerceAtLeast(0.0001))).toFloat()
+
+        val pzA = (gammaA * beamA.restMassGeV.toFloat() * betaA).coerceAtLeast(0.1f)
+        val pzB = -(gammaB * beamB.restMassGeV.toFloat() * betaB).coerceAtLeast(0.1f)
 
         val offsetY = (impactParameterFm * 0.05f).toFloat()
 
@@ -112,7 +120,8 @@ object RelativisticCollisionEngine {
             momentum = Vector3D(0f, 0f, pzA),
             charge = beamA.charge,
             generation = 0,
-            colorOverride = null
+            colorOverride = null,
+            speedFractionOfC = betaA
         )
 
         val particle2 = Particle3D(
@@ -122,10 +131,34 @@ object RelativisticCollisionEngine {
             momentum = Vector3D(0f, 0f, pzB),
             charge = beamB.charge,
             generation = 0,
-            colorOverride = null
+            colorOverride = null,
+            speedFractionOfC = betaB
         )
 
         return listOf(particle1, particle2)
+    }
+
+    /**
+     * Calculate center-of-mass energy sqrt(s) from individual beam particle speeds beta = v/c
+     */
+    fun calculateCenterOfMassEnergy(
+        beamA: ParticleSpecies,
+        beamB: ParticleSpecies,
+        speedA: Float,
+        speedB: Float
+    ): Double {
+        val betaA = speedA.coerceIn(0.05f, 0.9999f).toDouble()
+        val betaB = speedB.coerceIn(0.05f, 0.9999f).toDouble()
+        val gammaA = 1.0 / sqrt((1.0 - betaA * betaA).coerceAtLeast(1e-6))
+        val gammaB = 1.0 / sqrt((1.0 - betaB * betaB).coerceAtLeast(1e-6))
+        val eA = gammaA * beamA.restMassGeV.coerceAtLeast(0.0005)
+        val eB = gammaB * beamB.restMassGeV.coerceAtLeast(0.0005)
+        val pzA = gammaA * beamA.restMassGeV * betaA
+        val pzB = -gammaB * beamB.restMassGeV * betaB
+        val eTot = eA + eB
+        val pzTot = pzA + pzB
+        val s = eTot * eTot - pzTot * pzTot
+        return sqrt(s.coerceAtLeast(0.01))
     }
 
     /**

@@ -84,7 +84,10 @@ data class SimulationState(
     val wavePacketDispersionRate: Float = 1.0f,
     val wavePacketFrequencyScale: Float = 1.0f,
     val particlePacketConeScale: Float = 1.0f,
-    val packetDualityMode: PacketDualityMode = PacketDualityMode.DUAL_WAVE_PARTICLE
+    val packetDualityMode: PacketDualityMode = PacketDualityMode.DUAL_WAVE_PARTICLE,
+    val speedA: Float = 0.95f,         // 0.05 to 0.999 fraction of c
+    val speedB: Float = 0.95f,         // 0.05 to 0.999 fraction of c
+    val syncBeamSpeeds: Boolean = true // link A & B speeds symmetrically
 )
 
 class ColliderViewModel : ViewModel() {
@@ -133,10 +136,12 @@ class ColliderViewModel : ViewModel() {
     private fun resetIncomingBeams() {
         val s = _state.value
         val beams = RelativisticCollisionEngine.createIncomingBeams(
-            s.particleA,
-            s.particleB,
-            s.energyGeV / 2.0,
-            s.impactParameterFm
+            beamA = s.particleA,
+            beamB = s.particleB,
+            energyGeV = s.energyGeV / 2.0,
+            impactParameterFm = s.impactParameterFm,
+            speedA = s.speedA,
+            speedB = s.speedB
         )
         _liveParticles.value = beams
         _liveWavePackets.value = emptyList()
@@ -447,6 +452,10 @@ class ColliderViewModel : ViewModel() {
         _state.update { it.copy(enableParticlePacketEjection = enabled) }
     }
 
+    fun setImpactParameterFm(value: Double) {
+        _state.update { it.copy(impactParameterFm = value.coerceIn(0.0, 5.0)) }
+    }
+
     fun setWavePacketDispersionRate(rate: Float) {
         _state.update { it.copy(wavePacketDispersionRate = rate.coerceIn(0.2f, 3.0f)) }
     }
@@ -461,6 +470,48 @@ class ColliderViewModel : ViewModel() {
 
     fun setPacketDualityMode(mode: PacketDualityMode) {
         _state.update { it.copy(packetDualityMode = mode) }
+    }
+
+    fun setSpeedA(speed: Float) {
+        val clamped = speed.coerceIn(0.05f, 0.999f)
+        _state.update {
+            if (it.syncBeamSpeeds) {
+                it.copy(speedA = clamped, speedB = clamped)
+            } else {
+                it.copy(speedA = clamped)
+            }
+        }
+        updateBeamParticleSpeeds()
+    }
+
+    fun setSpeedB(speed: Float) {
+        val clamped = speed.coerceIn(0.05f, 0.999f)
+        _state.update {
+            if (it.syncBeamSpeeds) {
+                it.copy(speedA = clamped, speedB = clamped)
+            } else {
+                it.copy(speedB = clamped)
+            }
+        }
+        updateBeamParticleSpeeds()
+    }
+
+    fun setSyncBeamSpeeds(sync: Boolean) {
+        _state.update {
+            it.copy(syncBeamSpeeds = sync, speedB = if (sync) it.speedA else it.speedB)
+        }
+        updateBeamParticleSpeeds()
+    }
+
+    private fun updateBeamParticleSpeeds() {
+        val s = _state.value
+        val current = _liveParticles.value
+        if (isPendingDetonation && current.isNotEmpty()) {
+            val beamA = current.find { it.generation == 0 && it.momentum.z > 0 }
+            val beamB = current.find { it.generation == 0 && it.momentum.z < 0 }
+            beamA?.speedFractionOfC = s.speedA
+            beamB?.speedFractionOfC = s.speedB
+        }
     }
 
     fun clearLogs() {

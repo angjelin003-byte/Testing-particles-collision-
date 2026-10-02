@@ -787,8 +787,8 @@ fun Collider3DCanvas(
         }
 
         // Unified Name Bubble Inspector on Tap (Handles Particle, Wave Packet, or Particle Packet)
-        selectedEntity?.let { entity ->
-            selectedEntityScreenPos?.let { bubblePos ->
+        selectedEntity?.let { entity: InspectedEntity ->
+            selectedEntityScreenPos?.let { bubblePos: Offset ->
                 UnifiedInspectorBubble(
                     entity = entity,
                     magneticFieldTesla = simState.magneticFieldTesla,
@@ -983,100 +983,235 @@ fun Collider3DCanvas(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // Species & Ejected Packet HUD in Environment (Tap to Filter Species)
+            // ========================================================
+            // REVAMPED INFORMATIVE VIEWPORT TABS (HIGH-TECH CERN HUD)
+            // ========================================================
+            var activeViewportTab by remember { mutableStateOf<ViewportInfoTab?>(null) }
+
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (isDark) Color(0xFF0B132B).copy(alpha = 0.88f) else Color.White.copy(alpha = 0.90f),
-                tonalElevation = 4.dp
+                shape = RoundedCornerShape(10.dp),
+                color = if (isDark) Color(0xFF0F172A).copy(alpha = 0.90f) else Color.White.copy(alpha = 0.92f),
+                tonalElevation = 4.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.35f))
             ) {
-                Row(
-                    modifier = Modifier
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Packet Count Badges
-                    if (wavePackets.isNotEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF00E5FF).copy(alpha = 0.20f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF))
-                        ) {
-                            Text(
-                                text = "ψ WAVES: ${wavePackets.size}",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 9.sp,
-                                    color = Color(0xFF00E5FF)
-                                ),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)) {
+                    // Viewport Tab Chips Row
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "HUD TABS:",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 8.5.sp,
+                                color = Color.Gray
                             )
-                        }
-                    }
-
-                    if (particlePackets.isNotEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFFF9100).copy(alpha = 0.20f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF9100))
-                        ) {
-                            Text(
-                                text = ":: PACKETS: ${particlePackets.size}",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 9.sp,
-                                    color = Color(0xFFFF9100)
-                                ),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "SPECIES:",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 9.5.sp,
-                            color = Color.Gray
                         )
-                    )
 
-                    // "All" filter chip
-                    ClassificationFilterChip(
-                        name = "ALL",
-                        count = particles.size,
-                        color = if (isDark) Color.White else Color.Black,
-                        isSelected = selectedCategoryFilter == null,
-                        onClick = { selectedCategoryFilter = null }
-                    )
-
-                    // Categories with live particle counts
-                    val categories = listOf(
-                        ParticleCategory.LEPTON,
-                        ParticleCategory.MESON,
-                        ParticleCategory.BARYON,
-                        ParticleCategory.GAUGE_BOSON,
-                        ParticleCategory.HIGGS_BOSON,
-                        ParticleCategory.NUCLEUS
-                    )
-
-                    for (cat in categories) {
-                        val count = particles.count { it.species.category == cat }
-                        ClassificationFilterChip(
-                            name = cat.displayName,
-                            count = count,
-                            color = cat.badgeColor,
-                            isSelected = selectedCategoryFilter == cat,
+                        // Tab 1: Telemetry
+                        ViewportTabChip(
+                            title = "📊 TELEMETRY",
+                            isSelected = activeViewportTab == ViewportInfoTab.TELEMETRY,
+                            accentColor = Color(0xFF00E5FF),
                             onClick = {
-                                selectedCategoryFilter = if (selectedCategoryFilter == cat) null else cat
+                                activeViewportTab = if (activeViewportTab == ViewportInfoTab.TELEMETRY) null else ViewportInfoTab.TELEMETRY
                             }
                         )
+
+                        // Tab 2: Beams & Speeds
+                        ViewportTabChip(
+                            title = "🚀 BEAMS (%.2fc / %.2fc)".format(simState.speedA, simState.speedB),
+                            isSelected = activeViewportTab == ViewportInfoTab.BEAMS,
+                            accentColor = Color(0xFFFFD600),
+                            onClick = {
+                                activeViewportTab = if (activeViewportTab == ViewportInfoTab.BEAMS) null else ViewportInfoTab.BEAMS
+                            }
+                        )
+
+                        // Tab 3: Quantum Packets
+                        ViewportTabChip(
+                            title = "⚛ PACKETS (ψ=${wavePackets.size} / ::=${particlePackets.size})",
+                            isSelected = activeViewportTab == ViewportInfoTab.PACKETS,
+                            accentColor = Color(0xFFE040FB),
+                            onClick = {
+                                activeViewportTab = if (activeViewportTab == ViewportInfoTab.PACKETS) null else ViewportInfoTab.PACKETS
+                            }
+                        )
+
+                        // Tab 4: Detector Layers
+                        ViewportTabChip(
+                            title = "🛡 LAYERS (${activeCalHits.size} Hits)",
+                            isSelected = activeViewportTab == ViewportInfoTab.DETECTORS,
+                            accentColor = Color(0xFF00E676),
+                            onClick = {
+                                activeViewportTab = if (activeViewportTab == ViewportInfoTab.DETECTORS) null else ViewportInfoTab.DETECTORS
+                            }
+                        )
+
+                        // Tab 5: Species Filter
+                        ViewportTabChip(
+                            title = "SPECIES (${particles.size})",
+                            isSelected = activeViewportTab == ViewportInfoTab.SPECIES,
+                            accentColor = Color(0xFFFF4081),
+                            onClick = {
+                                activeViewportTab = if (activeViewportTab == ViewportInfoTab.SPECIES) null else ViewportInfoTab.SPECIES
+                            }
+                        )
+                    }
+
+                    // Expanded Informative Tab Pane
+                    activeViewportTab?.let { tab ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        when (tab) {
+                            ViewportInfoTab.TELEMETRY -> {
+                                Row(
+                                    modifier = Modifier
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    ViewportStatBadge("√s ENERGY", "%.1f GeV (%.2f TeV)".format(simState.energyGeV, simState.energyGeV / 1000.0), Color(0xFF00E5FF))
+                                    ViewportStatBadge("PROCESS", currentEvent?.primaryProcessName ?: "Incoming Flight", Color(0xFF00E5FF))
+                                    ViewportStatBadge("TRACKS", "${particles.size} (${currentEvent?.chargedMultiplicity ?: 0} ch)", Color(0xFF00E676))
+                                    ViewportStatBadge("M_inv", "%.2f GeV/c²".format(currentEvent?.invariantMassGeV ?: 0.0), Color(0xFFE040FB))
+                                    ViewportStatBadge("E_T,miss", "%.1f GeV".format(currentEvent?.missingETGeV ?: 0.0), Color(0xFF69F0AE))
+                                    ViewportStatBadge("CHARGE ΔQ", if (currentEvent != null) "%+.0f→%+.0f [EXACT]".format(currentEvent?.initialCharge ?: 0.0, currentEvent?.finalCharge ?: 0.0) else "EXACT", Color(0xFFFF9100))
+                                }
+                            }
+                            ViewportInfoTab.BEAMS -> {
+                                val gammaA = 1.0f / sqrt((1.0f - simState.speedA * simState.speedA).coerceAtLeast(0.0001f))
+                                val gammaB = 1.0f / sqrt((1.0f - simState.speedB * simState.speedB).coerceAtLeast(0.0001f))
+                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Row(
+                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        ViewportStatBadge("BEAM A (${simState.particleA.symbol})", "v_A = %.3f c (γ=%.2f)".format(simState.speedA, gammaA), Color(0xFF00E5FF))
+                                        ViewportStatBadge("BEAM B (${simState.particleB.symbol})", "v_B = %.3f c (γ=%.2f)".format(simState.speedB, gammaB), Color(0xFFFF9100))
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = (if (simState.syncBeamSpeeds) Color(0xFF00E5FF) else Color.Gray).copy(alpha = 0.20f),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .clickable { viewModel.setSyncBeamSpeeds(!simState.syncBeamSpeeds) }
+                                        ) {
+                                            Text(
+                                                text = if (simState.syncBeamSpeeds) "SYNC: LINKED" else "SYNC: ASYMMETRIC",
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 8.5.sp,
+                                                    color = if (simState.syncBeamSpeeds) Color(0xFF00E5FF) else Color.Gray
+                                                ),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    // Quick Speed Preset Chips
+                                    Row(
+                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("SET SPEED:", style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, color = Color.Gray))
+                                        listOf("0.50c" to 0.50f, "0.85c" to 0.85f, "0.95c" to 0.95f, "0.999c" to 0.999f).forEach { (lbl, spd) ->
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = Color(0xFF334155),
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .clickable {
+                                                        viewModel.setSpeedA(spd)
+                                                        viewModel.setSpeedB(spd)
+                                                    }
+                                            ) {
+                                                Text(
+                                                    text = lbl,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 8.5.sp, color = Color.White),
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            ViewportInfoTab.PACKETS -> {
+                                Row(
+                                    modifier = Modifier
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    ViewportStatBadge("ψ WAVES", "${wavePackets.size} active (λ_dB = 0.4-1.8m)", Color(0xFF00E5FF))
+                                    ViewportStatBadge(":: PACKETS", "${particlePackets.size} collimated bunches", Color(0xFFFF9100))
+                                    ViewportStatBadge("DUALITY MODE", simState.packetDualityMode.displayName, Color(0xFFE040FB))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xFFE040FB).copy(alpha = 0.20f),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable {
+                                                val nextMode = when (simState.packetDualityMode) {
+                                                    PacketDualityMode.DUAL_WAVE_PARTICLE -> PacketDualityMode.WAVE_PACKETS_ONLY
+                                                    PacketDualityMode.WAVE_PACKETS_ONLY -> PacketDualityMode.PARTICLE_PACKETS_ONLY
+                                                    PacketDualityMode.PARTICLE_PACKETS_ONLY -> PacketDualityMode.CLASSICAL_TRACKS
+                                                    else -> PacketDualityMode.DUAL_WAVE_PARTICLE
+                                                }
+                                                viewModel.setPacketDualityMode(nextMode)
+                                            }
+                                    ) {
+                                        Text(
+                                            text = "CYCLE DUALITY",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 8.5.sp, color = Color(0xFFE040FB)),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            ViewportInfoTab.DETECTORS -> {
+                                Row(
+                                    modifier = Modifier
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    DetectorLayerToggleChip("TRACKER", simState.showTracker, Color(0xFF7C4DFF)) { viewModel.toggleTrackerLayer() }
+                                    DetectorLayerToggleChip("ECAL", simState.showEcal, Color(0xFF00E676)) { viewModel.toggleEcalLayer() }
+                                    DetectorLayerToggleChip("HCAL", simState.showHcal, Color(0xFFFF9100)) { viewModel.toggleHcalLayer() }
+                                    DetectorLayerToggleChip("MUON", simState.showMuon, Color(0xFFFF1744)) { viewModel.toggleMuonLayer() }
+                                    DetectorLayerToggleChip("GRID", simState.gridOverlayEnabled, Color(0xFF90A4AE)) { viewModel.toggleGrid() }
+                                    DetectorLayerToggleChip("WIREFRAME", simState.wireframeEnabled, Color(0xFF00E5FF)) { viewModel.toggleWireframe() }
+                                }
+                            }
+                            ViewportInfoTab.SPECIES -> {
+                                Row(
+                                    modifier = Modifier
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    ClassificationFilterChip("ALL", particles.size, if (isDark) Color.White else Color.Black, selectedCategoryFilter == null) {
+                                        selectedCategoryFilter = null
+                                    }
+                                    listOf(ParticleCategory.LEPTON, ParticleCategory.MESON, ParticleCategory.BARYON, ParticleCategory.GAUGE_BOSON, ParticleCategory.HIGGS_BOSON, ParticleCategory.NUCLEUS).forEach { cat ->
+                                        val count = particles.count { it.species.category == cat }
+                                        ClassificationFilterChip(cat.displayName, count, cat.badgeColor, selectedCategoryFilter == cat) {
+                                            selectedCategoryFilter = if (selectedCategoryFilter == cat) null else cat
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1086,60 +1221,174 @@ fun Collider3DCanvas(
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(12.dp)
-                .clip(RoundedCornerShape(16.dp)),
-            color = if (isDark) Color(0xFF131C31).copy(alpha = 0.92f) else Color.White.copy(alpha = 0.94f),
-            tonalElevation = 6.dp
+                .padding(8.dp)
+                .clip(RoundedCornerShape(12.dp)),
+            color = if (isDark) Color(0xFF0F172A).copy(alpha = 0.92f) else Color.White.copy(alpha = 0.94f),
+            tonalElevation = 6.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.35f))
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
                     onClick = { viewModel.togglePause() },
-                    modifier = Modifier.testTag("play_pause_button")
+                    modifier = Modifier.size(32.dp).testTag("play_pause_button")
                 ) {
                     Icon(
                         imageVector = if (simState.isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
                         contentDescription = "Play/Pause Simulation",
-                        tint = if (isDark) Color(0xFF00E5FF) else Color(0xFF0288D1)
+                        tint = if (isDark) Color(0xFF00E5FF) else Color(0xFF0288D1),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
                 IconButton(
                     onClick = { viewModel.stepSingleFrame() },
                     enabled = simState.isPaused,
-                    modifier = Modifier.testTag("step_frame_button")
+                    modifier = Modifier.size(32.dp).testTag("step_frame_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "Step Single Frame",
-                        tint = if (simState.isPaused) (if (isDark) Color.White else Color.Black) else Color.Gray
+                        tint = if (simState.isPaused) (if (isDark) Color.White else Color.Black) else Color.Gray,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
                 Column {
                     Text(
-                        text = "TIME: %.4f c | ${simState.packetDualityMode.shortName}".format(simState.timeScale),
+                        text = "TIME: %.4f c • v_A: %.2fc, v_B: %.2fc".format(simState.timeScale, simState.speedA, simState.speedB),
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             color = if (isDark) Color(0xFFFFD600) else Color(0xFFE65100)
                         )
                     )
                     Text(
-                        text = "TRACKS: ${particles.size} | ψ WAVES: ${wavePackets.size} | PACKETS: ${particlePackets.size}",
+                        text = "TRACKS: ${particles.size} | ψ WAVES: ${wavePackets.size} | PKTS: ${particlePackets.size} | √s: %.1f TeV".format(simState.energyGeV / 1000.0),
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             color = if (isDark) Color.LightGray else Color.DarkGray
                         )
                     )
                 }
             }
+        }
+    }
+}
+
+enum class ViewportInfoTab(val label: String) {
+    TELEMETRY("TELEMETRY"),
+    BEAMS("BEAMS & SPEEDS"),
+    PACKETS("QUANTUM PACKETS"),
+    DETECTORS("DETECTORS"),
+    SPECIES("SPECIES FILTER")
+}
+
+@Composable
+fun ViewportTabChip(
+    title: String,
+    isSelected: Boolean,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = if (isSelected) accentColor.copy(alpha = 0.25f) else Color(0xFF1E293B).copy(alpha = 0.6f),
+        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, accentColor) else null,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                fontSize = 9.sp,
+                color = if (isSelected) accentColor else Color.LightGray
+            ),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
+        )
+    }
+}
+
+@Composable
+fun ViewportStatBadge(
+    label: String,
+    value: String,
+    accentColor: Color
+) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = Color(0xFF1E293B).copy(alpha = 0.8f),
+        border = androidx.compose.foundation.BorderStroke(0.6.dp, accentColor.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "$label: ",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 8.sp,
+                    color = Color.Gray
+                )
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 8.5.sp,
+                    color = accentColor
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun DetectorLayerToggleChip(
+    name: String,
+    isEnabled: Boolean,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = if (isEnabled) color.copy(alpha = 0.22f) else Color(0xFF1E293B).copy(alpha = 0.6f),
+        border = if (isEnabled) androidx.compose.foundation.BorderStroke(1.dp, color) else null,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(if (isEnabled) color else Color.Gray)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = if (isEnabled) FontWeight.Bold else FontWeight.Normal,
+                    fontSize = 8.5.sp,
+                    color = if (isEnabled) color else Color.Gray
+                )
+            )
         }
     }
 }
