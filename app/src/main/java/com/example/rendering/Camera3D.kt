@@ -43,8 +43,7 @@ class Camera3D(
         val rotY = Matrix3D.createRotationY(yawRad)
         val rotX = Matrix3D.createRotationX(pitchRad)
         val scale = Matrix3D.createScale(zoom, zoom, zoom)
-        val trans = Matrix3D.createTranslation(panX, panY, 0f)
 
-        return trans * scale * rotX * rotY
+        return scale * rotX * rotY
     }
 }

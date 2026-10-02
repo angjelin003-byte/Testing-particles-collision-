@@ -200,6 +200,48 @@ object StandardModelCatalog {
         description = "Neutral meson decaying almost instantly into photon pairs (π⁰ → γγ)."
     )
 
+    val KAON_PLUS = ParticleSpecies(
+        id = "kaon_plus",
+        name = "Kaon +",
+        symbol = "K⁺",
+        restMassGeV = 0.493677,
+        charge = 1.0,
+        spin = "0",
+        isAntimatter = false,
+        category = ParticleCategory.HADRON,
+        color = Color(0xFF26C6DA),
+        meanLifetimeNs = 12.38,
+        description = "Strange meson (u s̅) providing evidence for CP violation in kaon mixing."
+    )
+
+    val KAON_MINUS = ParticleSpecies(
+        id = "kaon_minus",
+        name = "Kaon -",
+        symbol = "K⁻",
+        restMassGeV = 0.493677,
+        charge = -1.0,
+        spin = "0",
+        isAntimatter = false,
+        category = ParticleCategory.HADRON,
+        color = Color(0xFF0097A7),
+        meanLifetimeNs = 12.38,
+        description = "Negatively charged strange meson (u̅ s)."
+    )
+
+    val KAON_ZERO = ParticleSpecies(
+        id = "kaon_zero",
+        name = "Neutral Kaon",
+        symbol = "K⁰",
+        restMassGeV = 0.497611,
+        charge = 0.0,
+        spin = "0",
+        isAntimatter = false,
+        category = ParticleCategory.HADRON,
+        color = Color(0xFF4DD0E1),
+        meanLifetimeNs = 51.16,
+        description = "Neutral strange meson (d s̅) exhibiting strangeness oscillations and CP violation."
+    )
+
     val UP_QUARK = ParticleSpecies(
         id = "up_quark",
         name = "Up Quark",
@@ -360,6 +402,7 @@ object StandardModelCatalog {
     val ALL_SPECIES = listOf(
         PROTON, ANTIPROTON, ELECTRON, POSITRON, MUON_MINUS, MUON_PLUS,
         TAU_MINUS, NEUTRINO_ELECTRON, PION_PLUS, PION_MINUS, PION_ZERO,
+        KAON_PLUS, KAON_MINUS, KAON_ZERO,
         UP_QUARK, DOWN_QUARK, TOP_QUARK, PHOTON, GLUON, W_PLUS_BOSON, Z_BOSON, HIGGS_BOSON,
         NEUTRON, ALPHA_PARTICLE, LEAD_ION
     )

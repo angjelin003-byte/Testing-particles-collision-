@@ -95,12 +95,15 @@ class Matrix3D private constructor(val m: FloatArray) {
 
     /**
      * Fast zero-allocation projection writing into outResult FloatArray(3) [screenX, screenY, scale]
+     * Includes 2D screen viewport pan offset (panX, panY)
      */
     fun projectToScreenFast(
         vx: Float, vy: Float, vz: Float,
         screenWidth: Float,
         screenHeight: Float,
         outResult: FloatArray,
+        panX: Float = 0f,
+        panY: Float = 0f,
         fovFactor: Float = 600f
     ): Boolean {
         val tx = m[0] * vx + m[1] * vy + m[2] * vz + m[3]
@@ -113,8 +116,8 @@ class Matrix3D private constructor(val m: FloatArray) {
         if (z <= 1f) return false
 
         val scale = fovFactor / z
-        outResult[0] = screenWidth / 2f + (tx * invW) * scale
-        outResult[1] = screenHeight / 2f - (ty * invW) * scale
+        outResult[0] = screenWidth / 2f + panX + (tx * invW) * scale
+        outResult[1] = screenHeight / 2f + panY - (ty * invW) * scale
         outResult[2] = scale
         return true
     }
