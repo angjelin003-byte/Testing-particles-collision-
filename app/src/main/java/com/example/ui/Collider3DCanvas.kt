@@ -31,11 +31,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +73,16 @@ fun Collider3DCanvas(
 
     val isDark = simState.isDarkTheme
     val bgColor = if (isDark) Color(0xFF080D1A) else Color(0xFFF0F4F8)
+
+    // Continuous Frame Ticker for uninterrupted 60FPS animation rendering
+    var frameTick by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(simState.isPaused) {
+        while (!simState.isPaused) {
+            withFrameNanos { nanos ->
+                frameTick = nanos
+            }
+        }
+    }
 
     // Reusable projection buffers and path object (Zero heap allocation during 60FPS draw)
     val projBuffer1 = remember { FloatArray(3) }
@@ -118,11 +131,13 @@ fun Collider3DCanvas(
                 }
             }
     ) {
-        // High-Performance Zero-Allocation 3D Canvas Renderer
+        // High-Performance Continuous 3D Canvas Renderer
         Canvas(modifier = Modifier.fillMaxSize().testTag("3d_collider_canvas")) {
             val width = size.width
             val height = size.height
 
+            @Suppress("UNUSED_VARIABLE")
+            val currentFrame = frameTick
             @Suppress("UNUSED_VARIABLE")
             val trigger = cameraChangeCounter
 
@@ -217,9 +232,29 @@ fun Collider3DCanvas(
                 )
             }
 
-            // 5. Draw Particle Trajectories and Glowing Trails
+            // 5. Draw Particle Trajectories and Custom Glowing Trails
             for (p in particles) {
-                val pColor = p.colorOverride ?: p.species.color
+                // Determine particle trail color based on selected TrailColorMode
+                val pColor = when (simState.trailColorMode) {
+                    TrailColorMode.SPECIES_COLOR -> p.colorOverride ?: p.species.color
+                    TrailColorMode.ENERGY_HEATMAP -> {
+                        val pT = p.transverseMomentum()
+                        when {
+                            pT > 80f -> Color(0xFFFF1744)  // High pT = Red
+                            pT > 30f -> Color(0xFFFFD600)  // Medium pT = Yellow
+                            pT > 10f -> Color(0xFF00E5FF)  // Moderate pT = Cyan
+                            else -> Color(0xFF7C4DFF)      // Low pT = Purple
+                        }
+                    }
+                    TrailColorMode.CHARGE_COLOR -> {
+                        when {
+                            p.charge > 0 -> Color(0xFFFF1744)   // Positive = Red
+                            p.charge < 0 -> Color(0xFF29B6F6)   // Negative = Blue
+                            else -> Color(0xFFFFD600)           // Neutral = Yellow
+                        }
+                    }
+                }
+
                 val history = p.trajectoryHistory
 
                 if (history.size > 1) {
@@ -238,12 +273,15 @@ fun Collider3DCanvas(
                     }
 
                     if (!firstPoint) {
+                        val widthScale = simState.trailWidth
+                        val alphaScale = simState.trailAlpha
+
                         // Pass 1: Glowing outer aura
                         drawPath(
                             path = reusablePath,
-                            color = pColor.copy(alpha = (0.35f * simState.glowIntensity).coerceIn(0.05f, 0.7f)),
+                            color = pColor.copy(alpha = (0.35f * simState.glowIntensity * alphaScale).coerceIn(0.05f, 1.0f)),
                             style = Stroke(
-                                width = (12.0f * simState.glowIntensity).coerceIn(2f, 24f),
+                                width = (12.0f * simState.glowIntensity * widthScale).coerceIn(2f, 32f),
                                 cap = StrokeCap.Round,
                                 join = StrokeJoin.Round
                             )
@@ -251,9 +289,9 @@ fun Collider3DCanvas(
                         // Pass 2: Intense core beam
                         drawPath(
                             path = reusablePath,
-                            color = pColor.copy(alpha = (0.95f * simState.glowIntensity).coerceIn(0.2f, 1.0f)),
+                            color = pColor.copy(alpha = (0.95f * simState.glowIntensity * alphaScale).coerceIn(0.2f, 1.0f)),
                             style = Stroke(
-                                width = (4.5f * simState.glowIntensity).coerceIn(1.5f, 10f),
+                                width = (4.5f * simState.glowIntensity * widthScale).coerceIn(1.5f, 16f),
                                 cap = StrokeCap.Round,
                                 join = StrokeJoin.Round
                             )
@@ -384,12 +422,12 @@ fun Collider3DCanvas(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
-                        text = "ZOOM: %.1fx".format(camera.zoom),
+                        text = if (simState.isBeamInFlight) "BEAMS IN FLIGHT → COLLISION PENDING" else "ZOOM: %.1fx".format(camera.zoom),
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
-                            color = if (isDark) Color(0xFF80DEEA) else Color(0xFF0277BD)
+                            color = if (simState.isBeamInFlight) Color(0xFFFF0844) else (if (isDark) Color(0xFF80DEEA) else Color(0xFF0277BD))
                         ),
                         modifier = Modifier.padding(end = 8.dp)
                     )

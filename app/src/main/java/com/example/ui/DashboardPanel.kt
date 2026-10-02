@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +30,6 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Functions
-import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -606,6 +604,7 @@ fun ParticleSelectorCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ControlsTab(
     viewModel: ColliderViewModel,
@@ -619,6 +618,127 @@ fun ControlsTab(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        item {
+            // Particle Trail Editor Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "PARTICLE TRAIL EDITOR",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFE040FB),
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Trail Length Slider
+                    Text(
+                        text = "Trail Length: ${simState.trailLength} points",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.trailLength.toFloat(),
+                        onValueChange = { viewModel.setTrailLength(it.toInt()) },
+                        valueRange = 5f..40f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFFE040FB),
+                            activeTrackColor = Color(0xFFE040FB)
+                        ),
+                        modifier = Modifier.testTag("trail_length_slider")
+                    )
+
+                    // Trail Width Scale
+                    Text(
+                        text = "Trail Thickness: %.1f×".format(simState.trailWidth),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.trailWidth,
+                        onValueChange = { viewModel.setTrailWidth(it) },
+                        valueRange = 0.5f..4.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF00E5FF),
+                            activeTrackColor = Color(0xFF00E5FF)
+                        ),
+                        modifier = Modifier.testTag("trail_width_slider")
+                    )
+
+                    // Trail Opacity
+                    Text(
+                        text = "Trail Opacity / Alpha: %.2f".format(simState.trailAlpha),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.trailAlpha,
+                        onValueChange = { viewModel.setTrailAlpha(it) },
+                        valueRange = 0.2f..1.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFFFFD600),
+                            activeTrackColor = Color(0xFFFFD600)
+                        ),
+                        modifier = Modifier.testTag("trail_alpha_slider")
+                    )
+
+                    // Trail Color Mode Chips
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Trail Color Mode:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TrailColorMode.entries.forEach { mode ->
+                            val isSelected = mode == simState.trailColorMode
+                            val chipBg = if (isSelected) Color(0xFFE040FB) else (if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                            val chipText = if (isSelected) Color.Black else (if (isDark) Color.White else Color.Black)
+
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { viewModel.setTrailColorMode(mode) }
+                                    .testTag("trail_mode_${mode.name}"),
+                                color = chipBg
+                            ) {
+                                Text(
+                                    text = mode.displayName,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = chipText,
+                                        fontSize = 10.sp
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = cardBg),

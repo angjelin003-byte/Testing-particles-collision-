@@ -16,6 +16,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
+enum class TrailColorMode(val displayName: String) {
+    SPECIES_COLOR("Species Category"),
+    ENERGY_HEATMAP("Energy Heatmap (pT)"),
+    CHARGE_COLOR("Electric Charge (+ / - / 0)")
+}
+
 data class SimulationState(
     val particleA: ParticleSpecies = StandardModelCatalog.PROTON,
     val particleB: ParticleSpecies = StandardModelCatalog.PROTON,
@@ -35,7 +41,11 @@ data class SimulationState(
     val glowIntensity: Float = 1.2f,
     val isDarkTheme: Boolean = true,
     val totalCollisionsFired: Long = 0L,
-    val isBeamInFlight: Boolean = false
+    val isBeamInFlight: Boolean = false,
+    val trailLength: Int = 20,       // 5 to 40
+    val trailWidth: Float = 1.0f,     // 0.5x to 4.0x
+    val trailAlpha: Float = 0.8f,     // 0.2 to 1.0
+    val trailColorMode: TrailColorMode = TrailColorMode.SPECIES_COLOR
 )
 
 class ColliderViewModel : ViewModel() {
@@ -85,7 +95,6 @@ class ColliderViewModel : ViewModel() {
     }
 
     fun fireCollision() {
-        // Unpause if paused and launch incoming beam particles
         _state.update { it.copy(isPaused = false, isBeamInFlight = true) }
         resetIncomingBeams()
     }
@@ -122,15 +131,13 @@ class ColliderViewModel : ViewModel() {
 
         val dt = s.timeScale * 0.12f
 
-        // Check if incoming beams reached collision vertex z = 0
         if (isPendingDetonation) {
             val beamA = particles.find { it.generation == 0 && it.momentum.z > 0 }
             val beamB = particles.find { it.generation == 0 && it.momentum.z < 0 }
 
             if (beamA != null && beamB != null) {
-                // Advance beam particles
-                beamA.step(dt, s.magneticFieldTesla, s.electricFieldMVm)
-                beamB.step(dt, s.magneticFieldTesla, s.electricFieldMVm)
+                beamA.step(dt, s.magneticFieldTesla, s.electricFieldMVm, maxTrailLength = s.trailLength)
+                beamB.step(dt, s.magneticFieldTesla, s.electricFieldMVm, maxTrailLength = s.trailLength)
 
                 if (abs(beamA.position.z) <= 0.3f || abs(beamB.position.z) <= 0.3f) {
                     detonateCollision()
@@ -144,15 +151,20 @@ class ColliderViewModel : ViewModel() {
             }
         }
 
-        // Advance shower particles
         val updated = mutableListOf<Particle3D>()
+        val newSecondary = mutableListOf<Particle3D>()
+
         for (p in particles) {
-            p.step(dt, s.magneticFieldTesla, s.electricFieldMVm)
-            if (!p.isEscaped) {
+            p.step(dt, s.magneticFieldTesla, s.electricFieldMVm, maxTrailLength = s.trailLength)
+            if (!p.isEscaped && !p.isDecayed) {
                 updated.add(p)
+                val daughters = p.checkAndTriggerSecondaryDecay()
+                if (daughters != null) {
+                    newSecondary.addAll(daughters)
+                }
             }
         }
-
+        updated.addAll(newSecondary)
         _liveParticles.value = updated
     }
 
@@ -189,6 +201,22 @@ class ColliderViewModel : ViewModel() {
 
     fun setGlowIntensity(glow: Float) {
         _state.update { it.copy(glowIntensity = glow) }
+    }
+
+    fun setTrailLength(length: Int) {
+        _state.update { it.copy(trailLength = length) }
+    }
+
+    fun setTrailWidth(width: Float) {
+        _state.update { it.copy(trailWidth = width) }
+    }
+
+    fun setTrailAlpha(alpha: Float) {
+        _state.update { it.copy(trailAlpha = alpha) }
+    }
+
+    fun setTrailColorMode(mode: TrailColorMode) {
+        _state.update { it.copy(trailColorMode = mode) }
     }
 
     fun togglePause() {
