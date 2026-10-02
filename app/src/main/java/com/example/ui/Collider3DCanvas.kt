@@ -3,10 +3,12 @@ package com.example.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -67,7 +70,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.physics.FourVector
 import com.example.physics.Particle3D
+import com.example.physics.ParticleCategory
 import com.example.rendering.DetectorWireframe
+import com.example.rendering.ViewProjectionMode
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -81,10 +86,24 @@ fun Collider3DCanvas(
     val simState by viewModel.state.collectAsState()
     val particles by viewModel.liveParticles.collectAsState()
     val currentEvent by viewModel.currentEvent.collectAsState()
+    val activeCalHits by viewModel.activeCalorimeterHits.collectAsState()
     val camera = viewModel.camera
 
     val isDark = simState.isDarkTheme
-    val bgColor = if (isDark) Color(0xFF090D16) else Color(0xFFF1F5F9)
+
+    // Compute background color dynamically from presets or live HSV sliders
+    val bgColor = remember(simState.bgPresetIndex, simState.bgHue, simState.bgSaturation, simState.bgBrightness, simState.isDarkTheme) {
+        val preset = BackgroundPresets.PRESETS.getOrNull(simState.bgPresetIndex)
+        if (preset != null && abs(simState.bgBrightness - (if (preset.isDark) 0.08f else 0.95f)) < 0.03f) {
+            preset.color
+        } else {
+            Color.hsv(
+                simState.bgHue.coerceIn(0f, 360f),
+                simState.bgSaturation.coerceIn(0f, 1f),
+                simState.bgBrightness.coerceIn(0.01f, 1f)
+            )
+        }
+    }
 
     // Continuous Frame Clock for uninterrupted 60FPS animation rendering
     var frameTick by remember { mutableLongStateOf(0L) }
@@ -99,6 +118,9 @@ fun Collider3DCanvas(
     // Selected particle for Name Bubble Inspection
     var selectedParticleId by remember { mutableStateOf<String?>(null) }
     var selectedParticleScreenPos by remember { mutableStateOf<Offset?>(null) }
+
+    // Selected category filter in environment HUD (null = all visible)
+    var selectedCategoryFilter by remember { mutableStateOf<ParticleCategory?>(null) }
 
     // Reusable buffers (Zero heap allocation during 60FPS draw)
     val projBuffer1 = remember { FloatArray(3) }
@@ -179,6 +201,7 @@ fun Collider3DCanvas(
                     if (!isDrag) {
                         // User performed a clean TAP! Check if tapped on a particle
                         val matrix = camera.buildTransformMatrix(canvasWidth, canvasHeight)
+                        val isIso = camera.isIsometricOr2D
                         var closestParticle: Particle3D? = null
                         var minDistance = Float.MAX_VALUE
                         val tapThreshold = 55f // generous touch radius in pixels
@@ -187,7 +210,8 @@ fun Collider3DCanvas(
                             if (matrix.projectToScreenFast(
                                     p.position.x, p.position.y, p.position.z,
                                     canvasWidth, canvasHeight, projBuffer1,
-                                    camera.panX, camera.panY
+                                    camera.panX, camera.panY,
+                                    isIsometric = isIso
                                 )
                             ) {
                                 val dx = projBuffer1[0] - initialDownPos.x
@@ -209,7 +233,7 @@ fun Collider3DCanvas(
                 }
             }
     ) {
-        // High-Precision Crisp CERN-Style 3D Event Display (No Glow)
+        // High-Precision Crisp CERN-Style 3D/2D Event Display (No Blurry Glow)
         Canvas(modifier = Modifier.fillMaxSize().testTag("3d_collider_canvas")) {
             canvasWidth = size.width
             canvasHeight = size.height
@@ -220,19 +244,22 @@ fun Collider3DCanvas(
             val trigger = cameraChangeCounter
 
             val matrix = camera.buildTransformMatrix(canvasWidth, canvasHeight)
+            val isIso = camera.isIsometricOr2D
 
-            // 1. Draw 3D Detector Wireframe Mesh
+            // 1. Draw Detector Wireframe Mesh
             if (simState.wireframeEnabled) {
                 for (line in wireframeLines) {
                     val ok1 = matrix.projectToScreenFast(
                         line.start.x, line.start.y, line.start.z,
                         canvasWidth, canvasHeight, projBuffer1,
-                        camera.panX, camera.panY
+                        camera.panX, camera.panY,
+                        isIsometric = isIso
                     )
                     val ok2 = matrix.projectToScreenFast(
                         line.end.x, line.end.y, line.end.z,
                         canvasWidth, canvasHeight, projBuffer2,
-                        camera.panX, camera.panY
+                        camera.panX, camera.panY,
+                        isIsometric = isIso
                     )
 
                     if (ok1 && ok2) {
@@ -247,33 +274,32 @@ fun Collider3DCanvas(
                 }
             }
 
-            // 2. Draw Calorimeter Energy Hit Cell Towers (Clean solid geometric blocks, no glow)
-            currentEvent?.calorimeterHits?.let { hits ->
-                for (hit in hits) {
-                    if (matrix.projectToScreenFast(
-                            hit.position.x, hit.position.y, hit.position.z,
-                            canvasWidth, canvasHeight, projBuffer1,
-                            camera.panX, camera.panY
-                        )
-                    ) {
-                        val hx = projBuffer1[0]
-                        val hy = projBuffer1[1]
-                        val hScale = projBuffer1[2]
-                        val towerRadius = (hit.energyGeV.toFloat() * 0.22f * hScale).coerceIn(6f, 22f)
+            // 2. Draw Dynamic Calorimeter Energy Hit Cell Towers
+            for (hit in activeCalHits) {
+                if (matrix.projectToScreenFast(
+                        hit.position.x, hit.position.y, hit.position.z,
+                        canvasWidth, canvasHeight, projBuffer1,
+                        camera.panX, camera.panY,
+                        isIsometric = isIso
+                    )
+                ) {
+                    val hx = projBuffer1[0]
+                    val hy = projBuffer1[1]
+                    val hScale = projBuffer1[2]
+                    val towerRadius = (hit.energyGeV.toFloat() * 0.22f * hScale).coerceIn(6f, 22f)
 
-                        // Clean cell deposit marker
-                        drawCircle(
-                            color = hit.color.copy(alpha = 0.85f),
-                            center = Offset(hx, hy),
-                            radius = towerRadius
-                        )
-                        drawCircle(
-                            color = Color.White,
-                            center = Offset(hx, hy),
-                            radius = towerRadius * 0.4f,
-                            style = Stroke(width = 1.5f)
-                        )
-                    }
+                    // Clean solid cell deposit marker
+                    drawCircle(
+                        color = hit.color.copy(alpha = 0.85f),
+                        center = Offset(hx, hy),
+                        radius = towerRadius
+                    )
+                    drawCircle(
+                        color = Color.White,
+                        center = Offset(hx, hy),
+                        radius = towerRadius * 0.4f,
+                        style = Stroke(width = 1.5f)
+                    )
                 }
             }
 
@@ -284,12 +310,14 @@ fun Collider3DCanvas(
                     val ok0 = matrix.projectToScreenFast(
                         0f, 0f, 0f,
                         canvasWidth, canvasHeight, projBuffer1,
-                        camera.panX, camera.panY
+                        camera.panX, camera.panY,
+                        isIsometric = isIso
                     )
                     val ok1 = matrix.projectToScreenFast(
                         missVec.x, missVec.y, missVec.z,
                         canvasWidth, canvasHeight, projBuffer2,
-                        camera.panX, camera.panY
+                        camera.panX, camera.panY,
+                        isIsometric = isIso
                     )
 
                     if (ok0 && ok1) {
@@ -309,7 +337,8 @@ fun Collider3DCanvas(
             if (matrix.projectToScreenFast(
                     0f, 0f, 0f,
                     canvasWidth, canvasHeight, projBuffer1,
-                    camera.panX, camera.panY
+                    camera.panX, camera.panY,
+                    isIsometric = isIso
                 )
             ) {
                 val ox = projBuffer1[0]
@@ -336,13 +365,14 @@ fun Collider3DCanvas(
                 )
             }
 
-            // 5. Draw Particle Trajectories and Crisp Particle Heads (NO GLOW)
+            // 5. Draw Particle Trajectories and Crisp Realistically Sized Particle Heads (NO GLOW)
             var currentSelectedScreenPos: Offset? = null
 
             for (p in particles) {
                 val isSelected = (p.id == selectedParticleId)
+                val matchesFilter = selectedCategoryFilter == null || p.species.category == selectedCategoryFilter
 
-                // Determine crisp track color
+                // Determine crisp track color from classification system
                 val pColor = when (simState.trailColorMode) {
                     TrailColorMode.SPECIES_COLOR -> p.colorOverride ?: p.species.color
                     TrailColorMode.ENERGY_HEATMAP -> {
@@ -374,7 +404,8 @@ fun Collider3DCanvas(
                         if (matrix.projectToScreenFast(
                                 pt.x, pt.y, pt.z,
                                 canvasWidth, canvasHeight, projBuffer1,
-                                camera.panX, camera.panY
+                                camera.panX, camera.panY,
+                                isIsometric = isIso
                             )
                         ) {
                             if (firstPoint) {
@@ -389,10 +420,15 @@ fun Collider3DCanvas(
                     if (!firstPoint) {
                         val baseWidth = if (isSelected) 4.5f else 2.5f
                         val strokeWidth = (baseWidth * simState.trailWidth).coerceIn(1.5f, 10f)
+                        val trackAlpha = if (matchesFilter) {
+                            if (isSelected) 1.0f else simState.trailAlpha
+                        } else {
+                            0.15f // Dim non-matching categories
+                        }
 
                         drawPath(
                             path = reusablePath,
-                            color = pColor.copy(alpha = if (isSelected) 1.0f else simState.trailAlpha),
+                            color = pColor.copy(alpha = trackAlpha),
                             style = Stroke(
                                 width = strokeWidth,
                                 cap = StrokeCap.Round,
@@ -402,18 +438,29 @@ fun Collider3DCanvas(
                     }
                 }
 
-                // Draw Clean Particle Head Sphere (Solid sphere + highlight, NO blurry glow halo)
-                if (matrix.projectToScreenFast(
+                // Draw Clean Particle Head Sphere with Mathematically Correct Physical Size
+                // REMOVE STATIC PARTICLES: newly detonated particles at r < 0.22m are not drawn as static dots at vertex
+                val distFromVertex = p.position.magnitude()
+                val isAtVertexInstant = p.generation != 0 && distFromVertex < 0.22f
+
+                if ((!isAtVertexInstant || isSelected) && matrix.projectToScreenFast(
                         p.position.x, p.position.y, p.position.z,
                         canvasWidth, canvasHeight, projBuffer1,
-                        camera.panX, camera.panY
+                        camera.panX, camera.panY,
+                        isIsometric = isIso
                     )
                 ) {
                     val hx = projBuffer1[0]
                     val hy = projBuffer1[1]
                     val hScale = projBuffer1[2]
-                    val baseRadius = if (isSelected) 9f else 6.5f
-                    val radius = (baseRadius * hScale).coerceIn(4.5f, 22f)
+
+                    // Realistic particle size based on subatomic physics classification:
+                    // Leptons (point-like) = 0.68x, Mesons = 1.05x, Baryons = 1.45x, Nuclei = 2.1-3.2x
+                    val baseRadius = if (isSelected) 8.5f else 5.5f
+                    val sizeMultiplier = p.species.renderRadiusMultiplier
+                    val radius = (baseRadius * sizeMultiplier * hScale).coerceIn(3.0f, 26f)
+
+                    val headAlpha = if (matchesFilter) 1.0f else 0.20f
 
                     // Track selected particle screen position for Name Bubble
                     if (isSelected) {
@@ -430,16 +477,18 @@ fun Collider3DCanvas(
 
                     // Solid clean particle head
                     drawCircle(
-                        color = pColor,
+                        color = pColor.copy(alpha = headAlpha),
                         center = Offset(hx, hy),
                         radius = radius
                     )
                     // Sharp specular highlight dot
-                    drawCircle(
-                        color = Color.White,
-                        center = Offset(hx - radius * 0.3f, hy - radius * 0.3f),
-                        radius = radius * 0.35f
-                    )
+                    if (headAlpha > 0.5f) {
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.9f),
+                            center = Offset(hx - radius * 0.3f, hy - radius * 0.3f),
+                            radius = radius * 0.35f
+                        )
+                    }
                 }
             }
 
@@ -462,134 +511,199 @@ fun Collider3DCanvas(
             )
         }
 
-        // Overlay Top Bar
-        Row(
+        // Overlay Top Bar & Environmental Color Classification Legend
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
-                .align(Alignment.TopStart),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(10.dp)
+                .align(Alignment.TopStart)
         ) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = if (isDark) Color(0xFF131C31).copy(alpha = 0.90f) else Color.White.copy(alpha = 0.92f),
-                tonalElevation = 6.dp
+            // Main Control Toolbar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isDark) Color(0xFF131C31).copy(alpha = 0.92f) else Color.White.copy(alpha = 0.94f),
+                    tonalElevation = 6.dp
                 ) {
-                    // Theme Toggle
-                    IconButton(
-                        onClick = { viewModel.toggleTheme() },
-                        modifier = Modifier.testTag("theme_toggle_button")
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isDark) Icons.Default.Brightness7 else Icons.Default.Brightness4,
-                            contentDescription = "Toggle Theme",
-                            tint = if (isDark) Color(0xFFFFD600) else Color(0xFF37474F)
+                        // Theme Toggle
+                        IconButton(
+                            onClick = { viewModel.toggleTheme() },
+                            modifier = Modifier.testTag("theme_toggle_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isDark) Icons.Default.Brightness7 else Icons.Default.Brightness4,
+                                contentDescription = "Toggle Theme",
+                                tint = if (isDark) Color(0xFFFFD600) else Color(0xFF37474F)
+                            )
+                        }
+
+                        // Wireframe Toggle
+                        IconButton(
+                            onClick = { viewModel.toggleWireframe() },
+                            modifier = Modifier.testTag("wireframe_toggle_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GridOn,
+                                contentDescription = "Toggle Wireframe",
+                                tint = if (simState.wireframeEnabled) Color(0xFF00E5FF) else Color.Gray
+                            )
+                        }
+
+                        // Zoom In Button
+                        IconButton(
+                            onClick = {
+                                camera.zoomIn()
+                                cameraChangeCounter++
+                            },
+                            modifier = Modifier.testTag("zoom_in_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ZoomIn,
+                                contentDescription = "Zoom In",
+                                tint = Color(0xFF00E5FF)
+                            )
+                        }
+
+                        // Zoom Out Button
+                        IconButton(
+                            onClick = {
+                                camera.zoomOut()
+                                cameraChangeCounter++
+                            },
+                            modifier = Modifier.testTag("zoom_out_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ZoomOut,
+                                contentDescription = "Zoom Out",
+                                tint = Color(0xFFFF9100)
+                            )
+                        }
+
+                        // Reset Camera & Viewport
+                        IconButton(
+                            onClick = {
+                                viewModel.resetCamera()
+                                cameraChangeCounter++
+                            },
+                            modifier = Modifier.testTag("reset_camera_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Reset Camera View",
+                                tint = if (isDark) Color.White else Color.Black
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // Projection & Zoom Readout
+                        Text(
+                            text = "[${simState.projectionMode.shortName}] %.1fx".format(camera.zoom),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFF80DEEA) else Color(0xFF0277BD)
+                            ),
+                            modifier = Modifier.padding(end = 8.dp)
                         )
                     }
+                }
 
-                    // Wireframe Toggle
-                    IconButton(
-                        onClick = { viewModel.toggleWireframe() },
-                        modifier = Modifier.testTag("wireframe_toggle_button")
+                Spacer(modifier = Modifier.weight(1f))
+
+                // Exit Button
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFFFF1744).copy(alpha = 0.90f),
+                    onClick = onExitClick,
+                    modifier = Modifier.testTag("exit_app_button")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.GridOn,
-                            contentDescription = "Toggle Wireframe",
-                            tint = if (simState.wireframeEnabled) Color(0xFF00E5FF) else Color.Gray
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Exit Application",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "EXIT",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
                         )
                     }
-
-                    // Zoom In Button
-                    IconButton(
-                        onClick = {
-                            camera.zoomIn()
-                            cameraChangeCounter++
-                        },
-                        modifier = Modifier.testTag("zoom_in_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ZoomIn,
-                            contentDescription = "Zoom In",
-                            tint = Color(0xFF00E5FF)
-                        )
-                    }
-
-                    // Zoom Out Button
-                    IconButton(
-                        onClick = {
-                            camera.zoomOut()
-                            cameraChangeCounter++
-                        },
-                        modifier = Modifier.testTag("zoom_out_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ZoomOut,
-                            contentDescription = "Zoom Out",
-                            tint = Color(0xFFFF9100)
-                        )
-                    }
-
-                    // Reset Camera & Pan
-                    IconButton(
-                        onClick = {
-                            viewModel.resetCamera()
-                            cameraChangeCounter++
-                        },
-                        modifier = Modifier.testTag("reset_camera_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Reset Camera View",
-                            tint = if (isDark) Color.White else Color.Black
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text(
-                        text = if (simState.isBeamInFlight) "BEAMS IN FLIGHT → COLLISION PENDING" else "ZOOM: %.1fx".format(camera.zoom),
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = if (simState.isBeamInFlight) Color(0xFFFF0844) else (if (isDark) Color(0xFF80DEEA) else Color(0xFF0277BD))
-                        ),
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Exit Button
+            // Color Classification HUD in Environment (Tap to Filter Species)
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0xFFFF1744).copy(alpha = 0.90f),
-                onClick = onExitClick,
-                modifier = Modifier.testTag("exit_app_button")
+                shape = RoundedCornerShape(12.dp),
+                color = if (isDark) Color(0xFF0B132B).copy(alpha = 0.88f) else Color.White.copy(alpha = 0.90f),
+                tonalElevation = 4.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Exit Application",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "EXIT",
+                        text = "SPECIES:",
                         style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            fontSize = 9.5.sp,
+                            color = Color.Gray
                         )
                     )
+
+                    // "All" filter chip
+                    ClassificationFilterChip(
+                        name = "ALL",
+                        count = particles.size,
+                        color = if (isDark) Color.White else Color.Black,
+                        isSelected = selectedCategoryFilter == null,
+                        onClick = { selectedCategoryFilter = null }
+                    )
+
+                    // Categories with live particle counts
+                    val categories = listOf(
+                        ParticleCategory.LEPTON,
+                        ParticleCategory.MESON,
+                        ParticleCategory.BARYON,
+                        ParticleCategory.GAUGE_BOSON,
+                        ParticleCategory.HIGGS_BOSON,
+                        ParticleCategory.NUCLEUS
+                    )
+
+                    for (cat in categories) {
+                        val count = particles.count { it.species.category == cat }
+                        ClassificationFilterChip(
+                            name = cat.displayName,
+                            count = count,
+                            color = cat.badgeColor,
+                            isSelected = selectedCategoryFilter == cat,
+                            onClick = {
+                                selectedCategoryFilter = if (selectedCategoryFilter == cat) null else cat
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -634,24 +748,67 @@ fun Collider3DCanvas(
 
                 Column {
                     Text(
-                        text = "TIME SCALE: %.4f c".format(simState.timeScale),
+                        text = "TIME: %.4f c | MODE: ${simState.projectionMode.displayName}".format(simState.timeScale),
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             color = if (isDark) Color(0xFFFFD600) else Color(0xFFE65100)
                         )
                     )
                     Text(
-                        text = "ACTIVE PARTICLES: ${particles.size} (Tap track to inspect)",
+                        text = "ACTIVE TRACKS: ${particles.size} (Tap particle to inspect)",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             color = if (isDark) Color.LightGray else Color.DarkGray
                         )
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Interactive Species Classification Chip shown in 3D environment HUD
+ */
+@Composable
+fun ClassificationFilterChip(
+    name: String,
+    count: Int,
+    color: Color,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected) color.copy(alpha = 0.25f) else Color.Transparent,
+        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, color) else null,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (count > 0) "$name ($count)" else name,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    fontSize = 9.5.sp,
+                    color = color
+                )
+            )
         }
     }
 }
@@ -681,8 +838,8 @@ fun ParticleNameBubble(
         Float.POSITIVE_INFINITY
     }
 
-    val bubbleWidth = 230f
-    val bubbleHeight = 160f
+    val bubbleWidth = 240f
+    val bubbleHeight = 180f
 
     // Clamp bubble to stay within screen boundaries
     val clampX = (screenPos.x - bubbleWidth / 2f).coerceIn(16f, (canvasWidth - bubbleWidth - 16f).coerceAtLeast(16f))
@@ -700,12 +857,12 @@ fun ParticleNameBubble(
         Surface(
             modifier = Modifier
                 .offset { IntOffset(clampX.roundToInt(), clampY.roundToInt()) }
-                .widthIn(max = 240.dp)
+                .widthIn(max = 250.dp)
                 .testTag("particle_name_bubble"),
             shape = RoundedCornerShape(12.dp),
             color = if (isDark) Color(0xFF131D33).copy(alpha = 0.95f) else Color.White.copy(alpha = 0.96f),
             shadowElevation = 8.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, particle.species.color)
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, particle.species.color)
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
                 // Header with Species Dot, Name, Symbol and Close Button
@@ -727,7 +884,7 @@ fun ParticleNameBubble(
                             style = MaterialTheme.typography.titleSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = particle.species.color,
-                                fontSize = 13.sp
+                                fontSize = 12.5.sp
                             )
                         )
                     }
@@ -746,10 +903,10 @@ fun ParticleNameBubble(
                 }
 
                 Text(
-                    text = when (particle.generation) {
-                        0 -> "Incoming Beam Particle"
-                        1 -> "Primary Collision Shower Track"
-                        else -> "Secondary Displaced Decay Daughter"
+                    text = "${particle.species.category.displayName} • " + when (particle.generation) {
+                        0 -> "Incoming Beam Track"
+                        1 -> "Primary Collision Shower"
+                        else -> "Secondary Displaced Daughter"
                     },
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = FontFamily.Monospace,
@@ -767,6 +924,8 @@ fun ParticleNameBubble(
                 BubbleDetailRow("Total Momentum |p|:", "%.2f GeV/c".format(pMag))
                 BubbleDetailRow("Total Energy E:", "%.2f GeV".format(energy))
                 BubbleDetailRow("Pseudo-Rapidity η:", "%+.2f (φ: %.2f)".format(fv.pseudoRapidity(), fv.phi()))
+                BubbleDetailRow("Physical Size r_ch:", if (particle.species.physicalRadiusFm > 0.0) "%.3f fm".format(particle.species.physicalRadiusFm) else "Point-like (< 10⁻¹⁸ m)")
+                BubbleDetailRow("Render Size Scale:", "%.2f× (Physical Relative)".format(particle.species.renderRadiusMultiplier))
                 if (!curvatureMeters.isInfinite()) {
                     BubbleDetailRow("Track Curvature R:", "%.1f meters".format(curvatureMeters))
                 }
@@ -786,7 +945,7 @@ fun BubbleDetailRow(label: String, value: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall.copy(
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 color = Color.Gray
             )
         )
@@ -795,7 +954,7 @@ fun BubbleDetailRow(label: String, value: String) {
             style = MaterialTheme.typography.bodySmall.copy(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 color = MaterialTheme.colorScheme.onSurface
             )
         )

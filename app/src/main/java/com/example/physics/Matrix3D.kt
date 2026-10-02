@@ -104,6 +104,7 @@ class Matrix3D private constructor(val m: FloatArray) {
         outResult: FloatArray,
         panX: Float = 0f,
         panY: Float = 0f,
+        isIsometric: Boolean = false,
         fovFactor: Float = 600f
     ): Boolean {
         val tx = m[0] * vx + m[1] * vy + m[2] * vz + m[3]
@@ -111,6 +112,13 @@ class Matrix3D private constructor(val m: FloatArray) {
         val tz = m[8] * vx + m[9] * vy + m[10] * vz + m[11]
         val tw = m[12] * vx + m[13] * vy + m[14] * vz + m[15]
         val invW = if (tw != 0f) 1f / tw else 1f
+
+        if (isIsometric) {
+            outResult[0] = screenWidth / 2f + panX + (tx * invW)
+            outResult[1] = screenHeight / 2f + panY - (ty * invW)
+            outResult[2] = 1.0f
+            return true
+        }
 
         val z = (tz * invW) + fovFactor
         if (z <= 1f) return false

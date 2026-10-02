@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -62,8 +63,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.physics.CollisionEventResult
+import com.example.physics.ParticleCategory
 import com.example.physics.ParticleSpecies
 import com.example.physics.StandardModelCatalog
+import com.example.rendering.ViewProjectionMode
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -512,6 +515,78 @@ fun ParticlesTab(
                 isDark = isDark
             )
         }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "SPECIES COLOR CLASSIFICATION",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF00E5FF),
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Standard Model color coding synchronized across 3D environment & event tracks:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val categories = listOf(
+                        Triple("Leptons (e⁻, e⁺, μ⁻, μ⁺, τ⁻, ν)", "Fundamental point-like fermions (Emerald / Mint)", Color(0xFF00E676)),
+                        Triple("Mesons (π⁺, π⁻, π⁰, K⁺, K⁻, K⁰)", "Quark-antiquark hadrons (Cobalt & Indigo Blue)", Color(0xFF2979FF)),
+                        Triple("Baryons (p, p̄, n)", "3-quark composite hadrons (Flame Crimson & Neon Red)", Color(0xFFFF3D00)),
+                        Triple("Gauge Bosons (γ, g, W⁺, Z⁰)", "Vector force carriers (Solar Gold & Purple)", Color(0xFFFFD600)),
+                        Triple("Higgs Boson (H⁰)", "Mass-generating scalar boson (Electric Orchid)", Color(0xFFE040FB)),
+                        Triple("Quarks (u, d, t)", "Fundamental fractional-charge quarks (Carmine Rose)", Color(0xFFFF4081)),
+                        Triple("Atomic Nuclei (⁴He, ²⁰⁸Pb)", "Multi-nucleon heavy ions (Intense Blaze Orange)", Color(0xFFFF9100))
+                    )
+
+                    categories.forEach { (catName, catDesc, catColor) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(catColor)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = catName,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = catColor,
+                                        fontSize = 10.5.sp
+                                    )
+                                )
+                                Text(
+                                    text = catDesc,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 9.sp,
+                                        color = if (isDark) Color.LightGray else Color.DarkGray
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -618,6 +693,237 @@ fun ControlsTab(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        item {
+            // Environment Background & 3D/2D Projection Viewport Editor Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "ENVIRONMENT BACKGROUND & VIEWPORT EDITOR",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF00E5FF),
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 1. Camera / Projection View Mode
+                    Text(
+                        text = "Projection View Mode:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ViewProjectionMode.entries.forEach { mode ->
+                            val isSelected = mode == simState.projectionMode
+                            val chipBg = if (isSelected) Color(0xFF00E5FF) else (if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                            val chipText = if (isSelected) Color.Black else (if (isDark) Color.White else Color.Black)
+
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { viewModel.setProjectionMode(mode) }
+                                    .testTag("projection_mode_${mode.name}"),
+                                color = chipBg
+                            ) {
+                                Text(
+                                    text = mode.displayName,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = chipText,
+                                        fontSize = 10.sp
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 2. Background Color Presets
+                    Text(
+                        text = "Background Preset Themes:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        BackgroundPresets.PRESETS.forEachIndexed { idx, preset ->
+                            val isSelected = idx == simState.bgPresetIndex
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.setBgPreset(idx) }
+                                    .testTag("bg_preset_$idx"),
+                                color = preset.color,
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF00E5FF)) else androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (preset.isDark) Color.White else Color.Black)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = preset.name,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (preset.isDark) Color.White else Color.Black,
+                                            fontSize = 9.5.sp
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 3. Custom Color Pickers: Hue, Saturation, Brightness
+                    Text(
+                        text = "Live Background Color Customizer:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            fontSize = 11.sp
+                        )
+                    )
+
+                    // Color Preview Swatch
+                    val currentComputedColor = Color.hsv(
+                        simState.bgHue.coerceIn(0f, 360f),
+                        simState.bgSaturation.coerceIn(0f, 1f),
+                        simState.bgBrightness.coerceIn(0.01f, 1f)
+                    )
+                    val hexCode = "#%06X".format(0xFFFFFF and currentComputedColor.toArgb())
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = currentComputedColor,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "COLOR PREVIEW: $hexCode",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
+                                    color = if (simState.bgBrightness > 0.5f) Color.Black else Color.White
+                                )
+                            )
+                            Text(
+                                text = if (simState.isDarkTheme) "Dark Canvas" else "Light Canvas",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    color = if (simState.bgBrightness > 0.5f) Color.Black else Color.White
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Hue Slider
+                    Text(
+                        text = "Background Hue: %.0f°".format(simState.bgHue),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 10.5.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.bgHue,
+                        onValueChange = { viewModel.setBgHue(it) },
+                        valueRange = 0f..360f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.hsv(simState.bgHue, 1f, 1f),
+                            activeTrackColor = Color.hsv(simState.bgHue, 0.8f, 0.9f)
+                        ),
+                        modifier = Modifier.testTag("bg_hue_slider")
+                    )
+
+                    // Saturation Slider
+                    Text(
+                        text = "Background Saturation: %.0f%%".format(simState.bgSaturation * 100f),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 10.5.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.bgSaturation,
+                        onValueChange = { viewModel.setBgSaturation(it) },
+                        valueRange = 0.0f..1.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF00E5FF),
+                            activeTrackColor = Color(0xFF00E5FF)
+                        ),
+                        modifier = Modifier.testTag("bg_saturation_slider")
+                    )
+
+                    // Brightness Slider
+                    Text(
+                        text = "Background Brightness: %.0f%%".format(simState.bgBrightness * 100f),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = textColor,
+                            fontSize = 10.5.sp
+                        )
+                    )
+                    Slider(
+                        value = simState.bgBrightness,
+                        onValueChange = { viewModel.setBgBrightness(it) },
+                        valueRange = 0.02f..1.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFFFFD600),
+                            activeTrackColor = Color(0xFFFFD600)
+                        ),
+                        modifier = Modifier.testTag("bg_brightness_slider")
+                    )
+                }
+            }
+        }
+
         item {
             // Particle Trail Editor Card
             Card(

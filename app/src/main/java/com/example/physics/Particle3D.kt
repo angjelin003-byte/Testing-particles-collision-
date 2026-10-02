@@ -92,7 +92,7 @@ data class Particle3D(
         val deltaMomentum = Vector3D(magneticForceX, magneticForceY, electricForceZ) * dtSeconds
         momentum += deltaMomentum
 
-        val deltaPosition = velocityFractionOfC() * dtSeconds * 10.0f
+        val deltaPosition = velocityFractionOfC() * dtSeconds * 25.0f
         position += deltaPosition
 
         // Limit trail history length dynamically

@@ -1,13 +1,18 @@
 package com.example.ui
 
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.physics.CalorimeterHit
 import com.example.physics.CollisionEventResult
 import com.example.physics.Particle3D
+import com.example.physics.ParticleCategory
 import com.example.physics.ParticleSpecies
 import com.example.physics.RelativisticCollisionEngine
 import com.example.physics.StandardModelCatalog
+import com.example.physics.Vector3D
 import com.example.rendering.Camera3D
+import com.example.rendering.ViewProjectionMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +25,23 @@ enum class TrailColorMode(val displayName: String) {
     SPECIES_COLOR("Species Category"),
     ENERGY_HEATMAP("Energy Heatmap (pT)"),
     CHARGE_COLOR("Electric Charge (+ / - / 0)")
+}
+
+data class BackgroundPreset(
+    val name: String,
+    val color: Color,
+    val isDark: Boolean
+)
+
+object BackgroundPresets {
+    val PRESETS = listOf(
+        BackgroundPreset("Deep Void", Color(0xFF090D16), true),
+        BackgroundPreset("CERN Control", Color(0xFF0C1222), true),
+        BackgroundPreset("Dark Slate", Color(0xFF1E293B), true),
+        BackgroundPreset("Pure OLED Black", Color(0xFF000000), true),
+        BackgroundPreset("Clean Lab", Color(0xFFECEFF1), false),
+        BackgroundPreset("Polar White", Color(0xFFF8FAFC), false)
+    )
 }
 
 data class SimulationState(
@@ -38,14 +60,19 @@ data class SimulationState(
     val showEcal: Boolean = true,
     val showHcal: Boolean = true,
     val showMuon: Boolean = true,
-    val glowIntensity: Float = 1.2f,
+    val glowIntensity: Float = 1.0f,
     val isDarkTheme: Boolean = true,
     val totalCollisionsFired: Long = 0L,
     val isBeamInFlight: Boolean = false,
     val trailLength: Int = 20,       // 5 to 40
     val trailWidth: Float = 1.0f,     // 0.5x to 4.0x
-    val trailAlpha: Float = 0.8f,     // 0.2 to 1.0
-    val trailColorMode: TrailColorMode = TrailColorMode.SPECIES_COLOR
+    val trailAlpha: Float = 0.85f,    // 0.2 to 1.0
+    val trailColorMode: TrailColorMode = TrailColorMode.SPECIES_COLOR,
+    val projectionMode: ViewProjectionMode = ViewProjectionMode.PERSPECTIVE,
+    val bgPresetIndex: Int = 0,
+    val bgHue: Float = 220f,         // 0f to 360f
+    val bgSaturation: Float = 0.45f, // 0f to 1.0f
+    val bgBrightness: Float = 0.08f  // 0.02f to 1.0f
 )
 
 class ColliderViewModel : ViewModel() {
@@ -55,6 +82,9 @@ class ColliderViewModel : ViewModel() {
 
     private val _liveParticles = MutableStateFlow<List<Particle3D>>(emptyList())
     val liveParticles: StateFlow<List<Particle3D>> = _liveParticles.asStateFlow()
+
+    private val _activeCalorimeterHits = MutableStateFlow<List<CalorimeterHit>>(emptyList())
+    val activeCalorimeterHits: StateFlow<List<CalorimeterHit>> = _activeCalorimeterHits.asStateFlow()
 
     private val _eventHistory = MutableStateFlow<List<CollisionEventResult>>(emptyList())
     val eventHistory: StateFlow<List<CollisionEventResult>> = _eventHistory.asStateFlow()
@@ -66,11 +96,12 @@ class ColliderViewModel : ViewModel() {
 
     private var eventCounter = 1001L
     private var isPendingDetonation = false
+    private val depositedParticleIds = mutableSetOf<String>()
 
     init {
         resetIncomingBeams()
 
-        // 60 FPS high-performance physics tick loop
+        // 60 FPS physics tick loop
         viewModelScope.launch {
             while (true) {
                 delay(16L) // ~60fps
@@ -90,6 +121,8 @@ class ColliderViewModel : ViewModel() {
             s.impactParameterFm
         )
         _liveParticles.value = beams
+        _activeCalorimeterHits.value = emptyList()
+        depositedParticleIds.clear()
         isPendingDetonation = true
         _state.update { it.copy(isBeamInFlight = true) }
     }
@@ -115,6 +148,8 @@ class ColliderViewModel : ViewModel() {
         _currentEvent.value = result
         _eventHistory.update { listOf(result) + it.take(49) }
         _liveParticles.value = result.generatedParticles
+        _activeCalorimeterHits.value = emptyList()
+        depositedParticleIds.clear()
         isPendingDetonation = false
         _state.update {
             it.copy(
@@ -153,17 +188,47 @@ class ColliderViewModel : ViewModel() {
 
         val updated = mutableListOf<Particle3D>()
         val newSecondary = mutableListOf<Particle3D>()
+        val newHits = mutableListOf<CalorimeterHit>()
 
         for (p in particles) {
             p.step(dt, s.magneticFieldTesla, s.electricFieldMVm, maxTrailLength = s.trailLength)
             if (!p.isEscaped && !p.isDecayed) {
                 updated.add(p)
+
+                // Dynamic Calorimeter Hit Generation:
+                // Only register energy deposition towers when particle physically arrives at detector cylinders!
+                val r = p.position.magnitude()
+                val pt = p.transverseMomentum().toDouble()
+
+                // ECAL Barrel at r = 4.5m
+                if (r >= 4.4f && r <= 5.0f && !depositedParticleIds.contains("${p.id}_ecal")) {
+                    if (p.species == StandardModelCatalog.PHOTON ||
+                        p.species == StandardModelCatalog.PION_ZERO ||
+                        (p.species.category == ParticleCategory.LEPTON && p.species != StandardModelCatalog.MUON_MINUS && p.species != StandardModelCatalog.MUON_PLUS && p.species != StandardModelCatalog.NEUTRINO_ELECTRON)) {
+                        depositedParticleIds.add("${p.id}_ecal")
+                        newHits.add(CalorimeterHit("ECAL", p.position, pt, Color(0xFF00E676)))
+                    }
+                }
+
+                // HCAL Barrel at r = 6.8m
+                if (r >= 6.6f && r <= 7.4f && !depositedParticleIds.contains("${p.id}_hcal")) {
+                    if ((p.species.category == ParticleCategory.BARYON || p.species.category == ParticleCategory.MESON) && p.species != StandardModelCatalog.PION_ZERO) {
+                        depositedParticleIds.add("${p.id}_hcal")
+                        newHits.add(CalorimeterHit("HCAL", p.position, pt, Color(0xFFFF9100)))
+                    }
+                }
+
                 val daughters = p.checkAndTriggerSecondaryDecay()
                 if (daughters != null) {
                     newSecondary.addAll(daughters)
                 }
             }
         }
+
+        if (newHits.isNotEmpty()) {
+            _activeCalorimeterHits.update { it + newHits }
+        }
+
         updated.addAll(newSecondary)
         _liveParticles.value = updated
     }
@@ -219,6 +284,50 @@ class ColliderViewModel : ViewModel() {
         _state.update { it.copy(trailColorMode = mode) }
     }
 
+    fun setProjectionMode(mode: ViewProjectionMode) {
+        camera.applyProjectionMode(mode)
+        _state.update { it.copy(projectionMode = mode) }
+    }
+
+    fun setBgPreset(index: Int) {
+        val preset = BackgroundPresets.PRESETS.getOrNull(index) ?: return
+        val (h, s, v) = when (index) {
+            0 -> Triple(220f, 0.45f, 0.08f) // Deep Void
+            1 -> Triple(218f, 0.48f, 0.12f) // CERN Control
+            2 -> Triple(215f, 0.33f, 0.18f) // Dark Slate
+            3 -> Triple(0f, 0.0f, 0.02f)    // OLED Black
+            4 -> Triple(200f, 0.06f, 0.93f) // Clean Lab
+            5 -> Triple(210f, 0.03f, 0.98f) // Polar White
+            else -> Triple(220f, 0.45f, 0.08f)
+        }
+        _state.update {
+            it.copy(
+                bgPresetIndex = index,
+                isDarkTheme = preset.isDark,
+                bgHue = h,
+                bgSaturation = s,
+                bgBrightness = v
+            )
+        }
+    }
+
+    fun setBgHue(hue: Float) {
+        _state.update { it.copy(bgHue = hue) }
+    }
+
+    fun setBgSaturation(saturation: Float) {
+        _state.update { it.copy(bgSaturation = saturation) }
+    }
+
+    fun setBgBrightness(brightness: Float) {
+        _state.update {
+            it.copy(
+                bgBrightness = brightness,
+                isDarkTheme = brightness < 0.5f
+            )
+        }
+    }
+
     fun togglePause() {
         _state.update { it.copy(isPaused = !it.isPaused) }
     }
@@ -232,11 +341,18 @@ class ColliderViewModel : ViewModel() {
     }
 
     fun toggleTheme() {
-        _state.update { it.copy(isDarkTheme = !it.isDarkTheme) }
+        val nextDark = !_state.value.isDarkTheme
+        _state.update {
+            it.copy(
+                isDarkTheme = nextDark,
+                bgPresetIndex = if (nextDark) 0 else 5
+            )
+        }
     }
 
     fun resetCamera() {
         camera.reset()
+        _state.update { it.copy(projectionMode = ViewProjectionMode.PERSPECTIVE) }
     }
 
     fun toggleTrackerLayer() {
@@ -258,6 +374,8 @@ class ColliderViewModel : ViewModel() {
     fun clearLogs() {
         _eventHistory.value = emptyList()
         _currentEvent.value = null
+        _activeCalorimeterHits.value = emptyList()
+        depositedParticleIds.clear()
     }
 
     fun formatAllLogsForExport(): String {

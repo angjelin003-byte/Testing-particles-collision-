@@ -63,7 +63,7 @@ object RelativisticCollisionEngine {
             momentum = Vector3D(0f, 0f, pzA),
             charge = beamA.charge,
             generation = 0,
-            colorOverride = Color(0xFF00E5FF)
+            colorOverride = null
         )
 
         val particle2 = Particle3D(
@@ -73,7 +73,7 @@ object RelativisticCollisionEngine {
             momentum = Vector3D(0f, 0f, pzB),
             charge = beamB.charge,
             generation = 0,
-            colorOverride = Color(0xFFFF9100)
+            colorOverride = null
         )
 
         return listOf(particle1, particle2)
@@ -269,14 +269,17 @@ object RelativisticCollisionEngine {
                     val pMag = pT / sin(theta)
                     val p = Vector3D(pT * cos(phi), pT * sin(phi), pMag * cos(theta))
 
+                    val pDir = if (p.magnitude() > 0.01f) p.normalized() else Vector3D(0f, 1f, 0f)
+                    val startPos = pDir * 0.28f
                     val p3d = Particle3D(
                         id = "higgs_mu_${UUID.randomUUID().toString().take(4)}",
                         species = sp,
-                        position = Vector3D.ZERO,
+                        position = startPos,
                         momentum = p,
                         charge = sp.charge,
                         generation = 1,
-                        colorOverride = Color(0xFF1DE9B6)
+                        colorOverride = null,
+                        trajectoryHistory = mutableListOf(Vector3D.ZERO, startPos)
                     )
                     generatedList.add(p3d)
                     decayTreeLines.add("│  │  └─ [μ%s] pT = %.1f GeV/c, η = %+.2f, φ = %.2f rad".format(
@@ -294,21 +297,20 @@ object RelativisticCollisionEngine {
                     val pMag = pT / sin(theta)
                     val p = Vector3D(pT * cos(phi), pT * sin(phi), pMag * cos(theta))
 
+                    val pDir = if (p.magnitude() > 0.01f) p.normalized() else Vector3D(0f, 1f, 0f)
+                    val startPos = pDir * 0.28f
                     val p3d = Particle3D(
                         id = "higgs_photon_${UUID.randomUUID().toString().take(4)}",
                         species = sp,
-                        position = Vector3D.ZERO,
+                        position = startPos,
                         momentum = p,
                         charge = 0.0,
                         generation = 1,
-                        colorOverride = Color(0xFFFFD600)
+                        colorOverride = null,
+                        trajectoryHistory = mutableListOf(Vector3D.ZERO, startPos)
                     )
                     generatedList.add(p3d)
-
-                    // ECAL Cell Hit Tower
-                    val hitPos = p.normalized() * 4.5f
-                    calHits.add(CalorimeterHit("ECAL", hitPos, pT.toDouble(), Color(0xFF00E676)))
-                    decayTreeLines.add("│  │  └─ [γ] E_T = %.1f GeV, ECAL Tower Cluster at r=4.5m".format(pT))
+                    decayTreeLines.add("│  │  └─ [γ] E_T = %.1f GeV, Reaches ECAL at r=4.5m".format(pT))
                 }
             }
         }
@@ -323,14 +325,17 @@ object RelativisticCollisionEngine {
             val nuMag = nuPt / sin(nuTheta)
             val nuP = Vector3D(nuPt * cos(nuPhi), nuPt * sin(nuPhi), nuMag * cos(nuTheta))
 
+            val nuDir = if (nuP.magnitude() > 0.01f) nuP.normalized() else Vector3D(1f, 0f, 0f)
+            val nuStartPos = nuDir * 0.28f
             val nuParticle = Particle3D(
                 id = "nu_miss_${UUID.randomUUID().toString().take(4)}",
                 species = nuSp,
-                position = Vector3D.ZERO,
+                position = nuStartPos,
                 momentum = nuP,
                 charge = 0.0,
                 generation = 1,
-                colorOverride = Color(0xFFB9F6CA)
+                colorOverride = null,
+                trajectoryHistory = mutableListOf(Vector3D.ZERO, nuStartPos)
             )
             generatedList.add(nuParticle)
             decayTreeLines.add("│  ├─ [ν] Neutrino (E_T_miss) | pT = %.1f GeV/c | Escapes Detector Unmeasured".format(nuPt))
@@ -376,26 +381,19 @@ object RelativisticCollisionEngine {
             val pMag = pt / sin(theta)
             val p = Vector3D(pt * cos(phi), pt * sin(phi), pMag * cos(theta))
 
+            val pDir = if (p.magnitude() > 0.01f) p.normalized() else Vector3D(0f, 1f, 0f)
+            val startPos = pDir * 0.28f
             val particle = Particle3D(
                 id = "shower_${i}_${species.id}_${UUID.randomUUID().toString().take(3)}",
                 species = species,
-                position = Vector3D.ZERO,
+                position = startPos,
                 momentum = p,
                 charge = species.charge,
-                generation = 1
+                generation = 1,
+                colorOverride = null,
+                trajectoryHistory = mutableListOf(Vector3D.ZERO, startPos)
             )
             generatedList.add(particle)
-
-            // Register Calorimeter Towers based on interaction mechanism
-            if (species.category == ParticleCategory.HADRON && species != StandardModelCatalog.PION_ZERO) {
-                // HCAL Hit Tower at r = 6.8m
-                val hcalPos = p.normalized() * 6.8f
-                calHits.add(CalorimeterHit("HCAL", hcalPos, pt.toDouble(), Color(0xFFFF9100)))
-            } else if (species == StandardModelCatalog.PHOTON || species == StandardModelCatalog.PION_ZERO || species.category == ParticleCategory.LEPTON && species != StandardModelCatalog.MUON_MINUS && species != StandardModelCatalog.MUON_PLUS) {
-                // ECAL Hit Tower at r = 4.5m
-                val ecalPos = p.normalized() * 4.5f
-                calHits.add(CalorimeterHit("ECAL", ecalPos, pt.toDouble(), Color(0xFF00E676)))
-            }
 
             if (i < 8) {
                 val fv = FourVector.fromParticle(species, p)
