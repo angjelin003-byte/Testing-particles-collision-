@@ -104,9 +104,6 @@ class ColliderViewModel : ViewModel() {
     private val _liveParticlePackets = MutableStateFlow<List<ParticlePacket3D>>(emptyList())
     val liveParticlePackets: StateFlow<List<ParticlePacket3D>> = _liveParticlePackets.asStateFlow()
 
-    private val _activeCalorimeterHits = MutableStateFlow<List<CalorimeterHit>>(emptyList())
-    val activeCalorimeterHits: StateFlow<List<CalorimeterHit>> = _activeCalorimeterHits.asStateFlow()
-
     private val _eventHistory = MutableStateFlow<List<CollisionEventResult>>(emptyList())
     val eventHistory: StateFlow<List<CollisionEventResult>> = _eventHistory.asStateFlow()
 
@@ -146,7 +143,6 @@ class ColliderViewModel : ViewModel() {
         _liveParticles.value = beams
         _liveWavePackets.value = emptyList()
         _liveParticlePackets.value = emptyList()
-        _activeCalorimeterHits.value = emptyList()
         depositedParticleIds.clear()
         isPendingDetonation = true
         _state.update { it.copy(isBeamInFlight = true) }
@@ -184,7 +180,6 @@ class ColliderViewModel : ViewModel() {
         _liveWavePackets.value = wavePkts
         _liveParticlePackets.value = particlePkts
 
-        _activeCalorimeterHits.value = emptyList()
         depositedParticleIds.clear()
         isPendingDetonation = false
         _state.update {
@@ -221,50 +216,18 @@ class ColliderViewModel : ViewModel() {
                 return
             }
         }
-
         val updated = mutableListOf<Particle3D>()
         val newSecondary = mutableListOf<Particle3D>()
-        val newHits = mutableListOf<CalorimeterHit>()
 
         for (p in particles) {
             p.step(dt, s.magneticFieldTesla, s.electricFieldMVm, maxTrailLength = s.trailLength)
-            if (!p.isEscaped && !p.isDecayed) {
+            if (!p.isEscaped) {
                 updated.add(p)
-
-                // Dynamic Calorimeter Hit Generation:
-                // Only register energy deposition towers when particle physically arrives at detector cylinders!
-                val r = p.position.magnitude()
-                val pt = p.transverseMomentum().toDouble()
-
-                // ECAL Barrel at r = 4.5m
-                if (r >= 4.4f && r <= 5.0f && !depositedParticleIds.contains("${p.id}_ecal")) {
-                    if (p.species == StandardModelCatalog.PHOTON ||
-                        p.species == StandardModelCatalog.PION_ZERO ||
-                        (p.species.category == ParticleCategory.LEPTON && p.species != StandardModelCatalog.MUON_MINUS && p.species != StandardModelCatalog.MUON_PLUS && p.species != StandardModelCatalog.NEUTRINO_ELECTRON)) {
-                        depositedParticleIds.add("${p.id}_ecal")
-                        newHits.add(CalorimeterHit("ECAL", p.position, pt, Color(0xFF00E676)))
-                    }
-                }
-
-                // HCAL Barrel at r = 6.8m
-                if (r >= 6.6f && r <= 7.4f && !depositedParticleIds.contains("${p.id}_hcal")) {
-                    if ((p.species.category == ParticleCategory.BARYON || p.species.category == ParticleCategory.MESON) && p.species != StandardModelCatalog.PION_ZERO) {
-                        depositedParticleIds.add("${p.id}_hcal")
-                        newHits.add(CalorimeterHit("HCAL", p.position, pt, Color(0xFFFF9100)))
-                    }
-                }
-
-                val daughters = p.checkAndTriggerSecondaryDecay()
-                if (daughters != null) {
+                p.checkAndTriggerSecondaryDecay()?.let { daughters ->
                     newSecondary.addAll(daughters)
                 }
             }
         }
-
-        if (newHits.isNotEmpty()) {
-            _activeCalorimeterHits.update { it + newHits }
-        }
-
         updated.addAll(newSecondary)
         _liveParticles.value = updated
 
@@ -517,7 +480,6 @@ class ColliderViewModel : ViewModel() {
     fun clearLogs() {
         _eventHistory.value = emptyList()
         _currentEvent.value = null
-        _activeCalorimeterHits.value = emptyList()
         depositedParticleIds.clear()
     }
 

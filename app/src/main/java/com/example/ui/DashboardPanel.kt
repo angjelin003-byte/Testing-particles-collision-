@@ -507,7 +507,7 @@ fun CompactParticleSelectorCard(
                 Text(selectedSpecies.symbol, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = selectedSpecies.color, fontSize = 9.sp))
             }
             Spacer(modifier = Modifier.height(3.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 StandardModelCatalog.ALL_SPECIES.forEach { species ->
                     val isSelected = species.id == selectedSpecies.id
                     Surface(
@@ -515,7 +515,7 @@ fun CompactParticleSelectorCard(
                         color = if (isSelected) species.color.copy(alpha = 0.2f) else Color.Transparent,
                         border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, species.color) else androidx.compose.foundation.BorderStroke(1.dp, subtleBorder)
                     ) {
-                        Text(species.symbol, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = if (isSelected) species.color else Color.Gray, fontSize = 8.5.sp), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                        Text(species.symbol, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = if (isSelected) species.color else Color.Gray, fontSize = 11.sp), modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
                     }
                 }
             }

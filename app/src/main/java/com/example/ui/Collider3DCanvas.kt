@@ -105,7 +105,7 @@ fun Collider3DCanvas(
     val wavePackets by viewModel.liveWavePackets.collectAsState()
     val particlePackets by viewModel.liveParticlePackets.collectAsState()
     val currentEvent by viewModel.currentEvent.collectAsState()
-    val activeCalHits by viewModel.activeCalorimeterHits.collectAsState()
+
     val camera = viewModel.camera
 
     val isDark = simState.isDarkTheme
@@ -335,33 +335,7 @@ fun Collider3DCanvas(
                 }
             }
 
-            // 2. Draw Dynamic Calorimeter Hits (Only appears as particles arrive at detector cylinders)
-            for (hit in activeCalHits) {
-                if (matrix.projectToScreenFast(
-                        hit.position.x, hit.position.y, hit.position.z,
-                        canvasWidth, canvasHeight, projBuffer1,
-                        camera.panX, camera.panY,
-                        isIsometric = isIso
-                    )
-                ) {
-                    val hx = projBuffer1[0]
-                    val hy = projBuffer1[1]
-                    val hScale = projBuffer1[2]
-                    val towerRadius = (4.0f + (hit.energyGeV.toFloat() * 0.35f).coerceIn(2f, 18f)) * hScale
 
-                    drawCircle(
-                        color = hit.color.copy(alpha = 0.85f),
-                        center = Offset(hx, hy),
-                        radius = towerRadius
-                    )
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.90f),
-                        center = Offset(hx, hy),
-                        radius = towerRadius * 0.4f,
-                        style = Stroke(width = 1.5f)
-                    )
-                }
-            }
 
             // 3. Draw Missing Transverse Energy Vector Arrow (Neutrino E_T_miss)
             currentEvent?.let { ev ->
@@ -1043,15 +1017,7 @@ fun Collider3DCanvas(
                             }
                         )
 
-                        // Tab 4: Detector Layers
-                        ViewportTabChip(
-                            title = "🛡 LAYERS (${activeCalHits.size} Hits)",
-                            isSelected = activeViewportTab == ViewportInfoTab.DETECTORS,
-                            accentColor = Color(0xFF00E676),
-                            onClick = {
-                                activeViewportTab = if (activeViewportTab == ViewportInfoTab.DETECTORS) null else ViewportInfoTab.DETECTORS
-                            }
-                        )
+
 
                         // Tab 5: Species Filter
                         ViewportTabChip(
@@ -1176,22 +1142,7 @@ fun Collider3DCanvas(
                                     }
                                 }
                             }
-                            ViewportInfoTab.DETECTORS -> {
-                                Row(
-                                    modifier = Modifier
-                                        .horizontalScroll(rememberScrollState())
-                                        .padding(vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    DetectorLayerToggleChip("TRACKER", simState.showTracker, Color(0xFF7C4DFF)) { viewModel.toggleTrackerLayer() }
-                                    DetectorLayerToggleChip("ECAL", simState.showEcal, Color(0xFF00E676)) { viewModel.toggleEcalLayer() }
-                                    DetectorLayerToggleChip("HCAL", simState.showHcal, Color(0xFFFF9100)) { viewModel.toggleHcalLayer() }
-                                    DetectorLayerToggleChip("MUON", simState.showMuon, Color(0xFFFF1744)) { viewModel.toggleMuonLayer() }
-                                    DetectorLayerToggleChip("GRID", simState.gridOverlayEnabled, Color(0xFF90A4AE)) { viewModel.toggleGrid() }
-                                    DetectorLayerToggleChip("WIREFRAME", simState.wireframeEnabled, Color(0xFF00E5FF)) { viewModel.toggleWireframe() }
-                                }
-                            }
+
                             ViewportInfoTab.SPECIES -> {
                                 Row(
                                     modifier = Modifier
@@ -1286,7 +1237,6 @@ enum class ViewportInfoTab(val label: String) {
     TELEMETRY("TELEMETRY"),
     BEAMS("BEAMS & SPEEDS"),
     PACKETS("QUANTUM PACKETS"),
-    DETECTORS("DETECTORS"),
     SPECIES("SPECIES FILTER")
 }
 
